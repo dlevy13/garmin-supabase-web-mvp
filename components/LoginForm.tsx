@@ -1,11 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export function LoginForm({ returnTo = "/dashboard" }: { returnTo?: string }) {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -17,7 +15,7 @@ export function LoginForm({ returnTo = "/dashboard" }: { returnTo?: string }) {
     setError("");
 
     const supabase = createSupabaseBrowserClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -28,8 +26,13 @@ export function LoginForm({ returnTo = "/dashboard" }: { returnTo?: string }) {
       return;
     }
 
-    router.replace(returnTo);
-    router.refresh();
+    if (!data.session) {
+      setError("Connexion etablie sans session exploitable.");
+      setLoading(false);
+      return;
+    }
+
+    window.location.assign(returnTo);
   }
 
   return (
