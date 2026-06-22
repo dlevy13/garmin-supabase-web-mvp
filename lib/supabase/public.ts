@@ -1,10 +1,10 @@
-function requirePublicEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing ${name}`);
-  return value;
+const supabaseUrlValue = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+if (!supabaseUrlValue) {
+  throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
 }
 
-export const supabaseUrl = requirePublicEnv("NEXT_PUBLIC_SUPABASE_URL");
+export const supabaseUrl = supabaseUrlValue;
 export function getSupabasePublishableKey(): string {
   const value =
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
