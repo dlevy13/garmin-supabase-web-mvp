@@ -40,10 +40,6 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (pathname === "/login" && user) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
-  }
-
   return response;
 }
 

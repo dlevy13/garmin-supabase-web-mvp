@@ -1,6 +1,4 @@
-import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/LoginForm";
-import { getAuthenticatedUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -9,16 +7,11 @@ export default async function LoginPage({
 }: {
   searchParams?: Promise<{ returnTo?: string | string[] }> | { returnTo?: string | string[] };
 }) {
-  const user = await getAuthenticatedUser();
   const resolvedSearchParams = await searchParams;
   const returnToValue = Array.isArray(resolvedSearchParams?.returnTo)
     ? resolvedSearchParams?.returnTo[0]
     : resolvedSearchParams?.returnTo;
   const returnTo = returnToValue && returnToValue.startsWith("/") ? returnToValue : "/dashboard";
-
-  if (user) {
-    redirect(returnTo);
-  }
 
   return (
     <main className="min-h-screen bg-[#f5f7fb] p-6 md:p-10">
