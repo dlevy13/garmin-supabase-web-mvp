@@ -26,6 +26,7 @@ type Activity = {
   distance_km: number | null;
   elevation_m: number | null;
   tss_final: number | null;
+  tss_source?: string | null;
 };
 
 type Pmc = {
@@ -36,6 +37,15 @@ type Pmc = {
   ctl: number;
   atl: number;
   tsb: number;
+};
+
+type ImportRow = {
+  id: string | number;
+  created_at: string | null;
+  file_name: string | null;
+  activities_upserted: number | null;
+  duplicates_ignored: number | null;
+  pmc_status: string | null;
 };
 
 type MetricRow = {
@@ -77,6 +87,36 @@ function formatDelta(current: number, previous: number) {
   return `${sign}${delta.toFixed(1)}%`;
 }
 
+function sourceLabel(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "Inconnu";
+
+  switch (normalized) {
+    case "garmin":
+      return "Garmin";
+    case "estimated_hr":
+      return "Estime FC";
+    case "estimated_power":
+      return "Estime puissance";
+    case "missing_duration":
+      return "Sans duree";
+    case "missing_power_hr":
+      return "Sans FC/puissance";
+    default:
+      return normalized;
+  }
+}
+
+function sourceTone(index: number) {
+  const tones = [
+    "bg-violet-100 text-violet-700",
+    "bg-blue-100 text-blue-700",
+    "bg-emerald-100 text-emerald-700",
+    "bg-orange-100 text-orange-700",
+  ];
+  return tones[index % tones.length];
+}
+
 function latestSeason(activities: Activity[]) {
   return Math.max(...activities.map((activity) => Number(activity.season)));
 }
@@ -86,6 +126,18 @@ function latestWeek(activities: Activity[], season: number) {
     ...activities
       .filter((activity) => Number(activity.season) === season)
       .map((activity) => Number(activity.week_in_season))
+  );
+}
+
+function latestPmcSeason(pmc: Pmc[]) {
+  return Math.max(...pmc.map((row) => Number(row.season)));
+}
+
+function latestPmcWeek(pmc: Pmc[], season: number) {
+  return Math.max(
+    ...pmc
+      .filter((row) => Number(row.season) === season)
+      .map((row) => Number(row.week_in_season))
   );
 }
 
@@ -559,6 +611,175 @@ function EquivalentDateCard({
 	  );
 	}
 
+function MobileKpiCard({
+  title,
+  value,
+  delta,
+  comparisonLabel,
+}: {
+  title: string;
+  value: string;
+  delta?: string | null;
+  comparisonLabel: string;
+}) {
+  return (
+    <div className="min-w-[168px] rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+      <div className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-slate-500">{title}</div>
+      <div className="mt-2 text-[1.6rem] font-semibold leading-none text-slate-950">{value}</div>
+      <div className={`mt-2 text-sm ${delta?.startsWith("+") ? "text-emerald-600" : "text-slate-500"}`}>
+        {delta ?? "—"}
+      </div>
+      <div className="mt-1 text-[0.72rem] text-slate-400">{comparisonLabel}</div>
+    </div>
+  );
+}
+
+function MobileSectionTitle({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <div>
+      <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
+      {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
+    </div>
+  );
+}
+
+function MobileMetricSelector<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (next: T) => void;
+  options: { key: T; label: string }[];
+}) {
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-1">
+      {options.map((option) => (
+        <button
+          key={option.key}
+          type="button"
+          onClick={() => onChange(option.key)}
+          className={`shrink-0 rounded-full px-4 py-2 text-sm transition ${
+            value === option.key ? "bg-indigo-600 font-semibold text-white" : "bg-white text-slate-600 shadow-[0_4px_12px_rgba(15,23,42,0.05)]"
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MobileSummaryCard({
+  seasonRange,
+  currentWeek,
+  tssDelta,
+  hoursDelta,
+  tsb,
+}: {
+  seasonRange: string;
+  currentWeek: number;
+  tssDelta?: string | null;
+  hoursDelta?: string | null;
+  tsb: number;
+}) {
+  const tssSentence = tssDelta
+    ? tssDelta.startsWith("+")
+      ? `Le TSS est en hausse de ${tssDelta.replace("+", "")} vs la saison precedente.`
+      : `Le TSS est en retrait de ${tssDelta.replace("-", "")} vs la saison precedente.`
+    : "Le TSS est stable vs la saison precedente.";
+
+  const hoursSentence = hoursDelta
+    ? hoursDelta.startsWith("+")
+      ? `Le volume horaire est en hausse de ${hoursDelta.replace("+", "")}.`
+      : `Le volume horaire est en retrait de ${hoursDelta.replace("-", "")}.`
+    : "Le volume horaire est stable.";
+
+  const tsbSentence =
+    tsb <= -10
+      ? `La fatigue recente est elevee avec un TSB de ${formatValue(tsb, "", 1)}.`
+      : tsb >= 5
+        ? `La fraicheur est bonne avec un TSB de ${formatValue(tsb, "", 1)}.`
+        : `Le TSB reste equilibre a ${formatValue(tsb, "", 1)}.`;
+
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+      <div className="text-sm font-semibold text-slate-950">Saison {seasonRange}</div>
+      <div className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
+        <p>Tu es a la semaine {currentWeek}.</p>
+        <p>{tssSentence}</p>
+        <p>{hoursSentence}</p>
+        <p>{tsbSentence}</p>
+      </div>
+    </div>
+  );
+}
+
+function MobileActivityCard({ activity }: { activity: Activity }) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-slate-950">{formatDate(activity.date)}</div>
+          <div className="mt-1 truncate text-sm text-slate-600">{activity.title || "Activite sans titre"}</div>
+        </div>
+        <div className="shrink-0 rounded-full bg-violet-50 px-3 py-1 text-sm font-semibold text-violet-700">
+          {formatValue(activity.tss_final)}
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
+        <span>{formatValue(activity.duration_hours, " h", 1)}</span>
+        <span>{formatValue(activity.distance_km, " km", 1)}</span>
+        <span>{sourceLabel(activity.tss_source as any)}</span>
+      </div>
+    </div>
+  );
+}
+
+function MobileImportCard({ item }: { item: ImportRow }) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-slate-950">{item.file_name || "Import CSV"}</div>
+          <div className="mt-1 text-xs text-slate-400">{formatDate(item.created_at, true)}</div>
+        </div>
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+          {item.pmc_status || "—"}
+        </span>
+      </div>
+      <div className="mt-3 flex gap-4 text-xs text-slate-500">
+        <span>{Number(item.activities_upserted ?? 0)} act.</span>
+        <span>{Number(item.duplicates_ignored ?? 0)} doublons</span>
+      </div>
+    </div>
+  );
+}
+
+function SourceSummaryCard({
+  label,
+  count,
+  tone,
+}: {
+  label: string;
+  count: number;
+  tone: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+      <div className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${tone}`}>{label}</div>
+      <div className="mt-3 text-2xl font-semibold text-slate-950">{count}</div>
+      <div className="mt-1 text-xs text-slate-400">activites</div>
+    </div>
+  );
+}
+
 function RecordsView({
   bestWeeks,
   bestMonths,
@@ -673,13 +894,19 @@ function ProjectionsView({
 export function DashboardCharts({
   activities = [],
   pmc = [],
-  initialView = "hebdo",
+  imports = [],
+  initialView = "synthese",
 }: {
   activities?: Activity[];
   pmc?: Pmc[];
+  imports?: ImportRow[];
   initialView?: DashboardView;
 }) {
   const [tab, setTab] = useState<DashboardView>(initialView);
+  const [mobileWeeklyMetric, setMobileWeeklyMetric] = useState<"tss" | "hours" | "distance" | "elevation">("tss");
+  const [mobileMonthlyMetric, setMobileMonthlyMetric] = useState<"tss" | "hours" | "distance" | "elevation">("tss");
+  const [mobileCumulativeMetric, setMobileCumulativeMetric] = useState<"tss" | "hours" | "distance" | "elevation">("tss");
+  const [mobilePmcMetric, setMobilePmcMetric] = useState<"ctl" | "atl" | "tsb">("tsb");
 
   useEffect(() => {
     setTab(initialView);
@@ -688,8 +915,16 @@ export function DashboardCharts({
   const data = useMemo(() => {
     if (!activities.length) return null;
 
-    const currentSeason = latestSeason(activities);
-    const currentWeek = latestWeek(activities, currentSeason);
+    const latestActivitySeason = latestSeason(activities);
+    const latestComputedPmcSeason = pmc.length ? latestPmcSeason(pmc) : latestActivitySeason;
+    const currentSeason = Math.max(latestActivitySeason, latestComputedPmcSeason);
+    const latestActivityWeek = activities.some((activity) => Number(activity.season) === currentSeason)
+      ? latestWeek(activities, currentSeason)
+      : 0;
+    const latestComputedPmcWeek = pmc.some((row) => Number(row.season) === currentSeason)
+      ? latestPmcWeek(pmc, currentSeason)
+      : 0;
+    const currentWeek = Math.max(latestActivityWeek, latestComputedPmcWeek);
     const previousSeason = currentSeason - 1;
     const seasons = Array.from(new Set(activities.filter((activity) => Number(activity.week_in_season) <= currentWeek).map((activity) => Number(activity.season)))).sort((a, b) => a - b);
 
@@ -698,6 +933,12 @@ export function DashboardCharts({
     const currentActivities = activities.filter((activity) => Number(activity.season) === currentSeason && Number(activity.week_in_season) <= currentWeek);
     const previousActivities = activities.filter((activity) => Number(activity.season) === previousSeason && Number(activity.week_in_season) <= currentWeek);
     const previousFullActivities = activities.filter((activity) => Number(activity.season) === previousSeason);
+    const recentActivities = [...currentActivities]
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 6);
+    const recentImports = [...imports]
+      .sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime())
+      .slice(0, 4);
 
     const weekly = groupActivitiesByPeriod(scopedActivities, "week_in_season", currentWeek);
     const monthly = groupActivitiesByPeriod(scopedActivities, "month_in_season", 12);
@@ -707,20 +948,38 @@ export function DashboardCharts({
     const cumulativeElevation = cumulative(weekly, "elevation");
     const pmcWeekly = groupPmcByWeek(scopedPmc, currentWeek);
 
+    const latestPmcOverall = [...pmc]
+      .sort((a, b) => new Date(a.date_day).getTime() - new Date(b.date_day).getTime())
+      .at(-1);
+
     const currentPmc = pmc
       .filter((row) => Number(row.season) === currentSeason)
       .sort((a, b) => new Date(a.date_day).getTime() - new Date(b.date_day).getTime())
-      .at(-1);
+      .at(-1) ?? latestPmcOverall;
 
     const previousPmcSameWeek = pmc
       .filter((row) => Number(row.season) === previousSeason && Number(row.week_in_season) === currentWeek)
       .sort((a, b) => new Date(a.date_day).getTime() - new Date(b.date_day).getTime())
-      .at(-1);
+      .at(-1) ??
+      pmc
+        .filter((row) => Number(row.season) === previousSeason)
+        .sort((a, b) => new Date(a.date_day).getTime() - new Date(b.date_day).getTime())
+        .at(-1);
 
     const weeklyTss = movingAverage(pivotBySeason(weekly, "tss", seasons, currentWeek, "weekly"), seasons);
     const weeklyHours = movingAverage(pivotBySeason(weekly, "hours", seasons, currentWeek, "weekly"), seasons);
     const weeklyDistance = movingAverage(pivotBySeason(weekly, "distance", seasons, currentWeek, "weekly"), seasons);
     const weeklyElevation = movingAverage(pivotBySeason(weekly, "elevation", seasons, currentWeek, "weekly"), seasons);
+    const tssSourceCounts = Array.from(
+      currentActivities.reduce((map, activity) => {
+        const key = String(activity.tss_source ?? "unknown");
+        map.set(key, (map.get(key) ?? 0) + 1);
+        return map;
+      }, new Map<string, number>())
+    )
+      .map(([key, count]) => ({ key, label: sourceLabel(key), count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 4);
 
     return {
       currentSeason,
@@ -748,6 +1007,11 @@ export function DashboardCharts({
         bestWeeks: [...weekly].sort((a, b) => Number(b.tss ?? 0) - Number(a.tss ?? 0)).slice(0, 6),
         bestMonths: [...monthly].sort((a, b) => Number(b.tss ?? 0) - Number(a.tss ?? 0)).slice(0, 6),
         biggestActivities: [...scopedActivities].sort((a, b) => Number(b.tss_final ?? 0) - Number(a.tss_final ?? 0)).slice(0, 6),
+      },
+      mobileData: {
+        recentActivities,
+        recentImports,
+        tssSourceCounts,
       },
       projections: [
         {
@@ -805,7 +1069,7 @@ export function DashboardCharts({
         pmcTsb: pivotBySeason(pmcWeekly, "tsb", seasons, currentWeek, "weekly"),
       },
     };
-  }, [activities, pmc]);
+  }, [activities, imports, pmc]);
 
   if (!data) {
     return <div className="rounded-3xl bg-white p-8">Aucune donnée pour le moment.</div>;
@@ -839,7 +1103,7 @@ export function DashboardCharts({
               { title: "ATL (Fatigue)", data: data.topCharts.pmcAtl, unit: "", digits: 1, mode: "pmc" as const },
               { title: "TSB (Forme)", data: data.topCharts.pmcTsb, unit: "", digits: 1, mode: "pmc" as const },
             ]
-          : tab === "records" || tab === "projections"
+          : tab === "records" || tab === "projections" || tab === "donnees"
             ? []
           : [
               { title: "TSS hebdo (moy. 4 sem.)", data: data.topCharts.weeklyTss, unit: "", digits: 0, mode: "weekly" as const },
@@ -852,8 +1116,287 @@ export function DashboardCharts({
               { title: "D+ cumule", data: data.topCharts.cumulativeElevation, unit: " m", digits: 0, mode: "weekly" as const },
             ];
 
+  const mobileWeeklyCharts = {
+    tss: { title: "TSS hebdo", data: data.topCharts.weeklyTss, unit: "", digits: 0, mode: "weekly" as const },
+    hours: { title: "Heures hebdo", data: data.topCharts.weeklyHours, unit: " h", digits: 1, mode: "weekly" as const },
+    distance: { title: "Distance hebdo", data: data.topCharts.weeklyDistance, unit: " km", digits: 1, mode: "weekly" as const },
+    elevation: { title: "D+ hebdo", data: data.topCharts.weeklyElevation, unit: " m", digits: 0, mode: "weekly" as const },
+  };
+
+  const mobileMonthlyCharts = {
+    tss: { title: "TSS mensuel", data: data.topCharts.monthlyTss, unit: "", digits: 0, mode: "monthly" as const },
+    hours: { title: "Heures mensuelles", data: data.topCharts.monthlyHours, unit: " h", digits: 1, mode: "monthly" as const },
+    distance: { title: "Distance mensuelle", data: data.topCharts.monthlyDistance, unit: " km", digits: 1, mode: "monthly" as const },
+    elevation: { title: "D+ mensuel", data: data.topCharts.monthlyElevation, unit: " m", digits: 0, mode: "monthly" as const },
+  };
+
+  const mobileCumulativeCharts = {
+    tss: { title: "TSS cumule", data: data.topCharts.cumulativeTss, unit: "", digits: 0, mode: "weekly" as const },
+    hours: { title: "Heures cumulees", data: data.topCharts.cumulativeHours, unit: " h", digits: 1, mode: "weekly" as const },
+    distance: { title: "Distance cumulee", data: data.topCharts.cumulativeDistance, unit: " km", digits: 1, mode: "weekly" as const },
+    elevation: { title: "D+ cumule", data: data.topCharts.cumulativeElevation, unit: " m", digits: 0, mode: "weekly" as const },
+  };
+
+  const mobilePmcCharts = {
+    ctl: { title: "CTL", data: data.topCharts.pmcCtl, unit: "", digits: 1, mode: "pmc" as const },
+    atl: { title: "ATL", data: data.topCharts.pmcAtl, unit: "", digits: 1, mode: "pmc" as const },
+    tsb: { title: "TSB", data: data.topCharts.pmcTsb, unit: "", digits: 1, mode: "pmc" as const },
+  };
+
   return (
     <div className="space-y-6">
+      <div className="space-y-5 lg:hidden">
+        {tab === "synthese" && (
+          <>
+            <MobileSectionTitle
+              title={`Saison ${data.seasonRange}`}
+              subtitle={`Semaine ${data.currentWeek} · consultation mobile`}
+            />
+
+            <div className="-mx-4 overflow-x-auto px-4 pb-1">
+              <div className="flex gap-3">
+                <MobileKpiCard
+                  title="TSS saison"
+                  value={formatValue(data.kpis.tss)}
+                  delta={formatDelta(data.kpis.tss, data.previousKpis.tss)}
+                  comparisonLabel={data.comparisonLabel}
+                />
+                <MobileKpiCard
+                  title="Heures"
+                  value={formatValue(data.kpis.hours, " h")}
+                  delta={formatDelta(data.kpis.hours, data.previousKpis.hours)}
+                  comparisonLabel={data.comparisonLabel}
+                />
+                <MobileKpiCard
+                  title="Distance"
+                  value={formatValue(data.kpis.distance, " km")}
+                  delta={formatDelta(data.kpis.distance, data.previousKpis.distance)}
+                  comparisonLabel={data.comparisonLabel}
+                />
+                <MobileKpiCard
+                  title="D+"
+                  value={formatValue(data.kpis.elevation, " m")}
+                  delta={formatDelta(data.kpis.elevation, data.previousKpis.elevation)}
+                  comparisonLabel={data.comparisonLabel}
+                />
+                <MobileKpiCard
+                  title="CTL"
+                  value={formatValue(Number(data.currentPmc?.ctl ?? 0), "", 1)}
+                  delta={formatDelta(Number(data.currentPmc?.ctl ?? 0), Number(data.previousPmcSameWeek?.ctl ?? 0))}
+                  comparisonLabel={data.comparisonLabel}
+                />
+                <MobileKpiCard
+                  title="ATL"
+                  value={formatValue(Number(data.currentPmc?.atl ?? 0), "", 1)}
+                  delta={formatDelta(Number(data.currentPmc?.atl ?? 0), Number(data.previousPmcSameWeek?.atl ?? 0))}
+                  comparisonLabel={data.comparisonLabel}
+                />
+                <MobileKpiCard
+                  title="TSB"
+                  value={formatValue(Number(data.currentPmc?.tsb ?? 0), "", 1)}
+                  delta={formatDelta(Number(data.currentPmc?.tsb ?? 0), Number(data.previousPmcSameWeek?.tsb ?? 0))}
+                  comparisonLabel={data.comparisonLabel}
+                />
+              </div>
+            </div>
+
+            <ChartCard
+              title="TSS hebdo"
+              data={data.topCharts.weeklyTss}
+              seasons={data.seasons}
+              currentSeason={data.currentSeason}
+              unit=""
+              digits={0}
+              mode="weekly"
+            />
+
+            <ChartCard
+              title="TSB - forme"
+              data={data.topCharts.pmcTsb}
+              seasons={data.seasons}
+              currentSeason={data.currentSeason}
+              digits={1}
+              mode="pmc"
+            />
+
+            <CurrentFormCard
+              ctl={Number(data.currentPmc?.ctl ?? 0)}
+              atl={Number(data.currentPmc?.atl ?? 0)}
+              tsb={Number(data.currentPmc?.tsb ?? 0)}
+              ctlDelta={formatDelta(Number(data.currentPmc?.ctl ?? 0), Number(data.previousPmcSameWeek?.ctl ?? 0))}
+              atlDelta={formatDelta(Number(data.currentPmc?.atl ?? 0), Number(data.previousPmcSameWeek?.atl ?? 0))}
+              tsbDelta={formatDelta(Number(data.currentPmc?.tsb ?? 0), Number(data.previousPmcSameWeek?.tsb ?? 0))}
+              comparisonLabel={data.comparisonLabel}
+            />
+
+            <MobileSummaryCard
+              seasonRange={data.seasonRange}
+              currentWeek={data.currentWeek}
+              tssDelta={formatDelta(data.kpis.tss, data.previousKpis.tss)}
+              hoursDelta={formatDelta(data.kpis.hours, data.previousKpis.hours)}
+              tsb={Number(data.currentPmc?.tsb ?? 0)}
+            />
+          </>
+        )}
+
+        {tab === "hebdo" && (
+          <div className="space-y-4">
+            <MobileSectionTitle title="Hebdo" subtitle="Une metrique a la fois, semaine par semaine." />
+            <MobileMetricSelector
+              value={mobileWeeklyMetric}
+              onChange={setMobileWeeklyMetric}
+              options={[
+                { key: "tss", label: "TSS" },
+                { key: "hours", label: "Heures" },
+                { key: "distance", label: "Distance" },
+                { key: "elevation", label: "D+" },
+              ]}
+            />
+            <ChartCard
+              title={mobileWeeklyCharts[mobileWeeklyMetric].title}
+              data={mobileWeeklyCharts[mobileWeeklyMetric].data}
+              seasons={data.seasons}
+              currentSeason={data.currentSeason}
+              unit={mobileWeeklyCharts[mobileWeeklyMetric].unit}
+              digits={mobileWeeklyCharts[mobileWeeklyMetric].digits}
+              mode={mobileWeeklyCharts[mobileWeeklyMetric].mode}
+            />
+          </div>
+        )}
+
+        {tab === "mensuel" && (
+          <div className="space-y-4">
+            <MobileSectionTitle title="Mensuel" subtitle="Lecture mensuelle sur une metrique choisie." />
+            <MobileMetricSelector
+              value={mobileMonthlyMetric}
+              onChange={setMobileMonthlyMetric}
+              options={[
+                { key: "tss", label: "TSS" },
+                { key: "hours", label: "Heures" },
+                { key: "distance", label: "Distance" },
+                { key: "elevation", label: "D+" },
+              ]}
+            />
+            <ChartCard
+              title={mobileMonthlyCharts[mobileMonthlyMetric].title}
+              data={mobileMonthlyCharts[mobileMonthlyMetric].data}
+              seasons={data.seasons}
+              currentSeason={data.currentSeason}
+              unit={mobileMonthlyCharts[mobileMonthlyMetric].unit}
+              digits={mobileMonthlyCharts[mobileMonthlyMetric].digits}
+              mode={mobileMonthlyCharts[mobileMonthlyMetric].mode}
+            />
+          </div>
+        )}
+
+        {tab === "cumule" && (
+          <div className="space-y-4">
+            <MobileSectionTitle title="Cumule" subtitle="Voir si la saison avance ou retarde." />
+            <MobileMetricSelector
+              value={mobileCumulativeMetric}
+              onChange={setMobileCumulativeMetric}
+              options={[
+                { key: "tss", label: "TSS" },
+                { key: "hours", label: "Heures" },
+                { key: "distance", label: "Distance" },
+                { key: "elevation", label: "D+" },
+              ]}
+            />
+            <ChartCard
+              title={mobileCumulativeCharts[mobileCumulativeMetric].title}
+              data={mobileCumulativeCharts[mobileCumulativeMetric].data}
+              seasons={data.seasons}
+              currentSeason={data.currentSeason}
+              unit={mobileCumulativeCharts[mobileCumulativeMetric].unit}
+              digits={mobileCumulativeCharts[mobileCumulativeMetric].digits}
+              mode={mobileCumulativeCharts[mobileCumulativeMetric].mode}
+            />
+          </div>
+        )}
+
+        {tab === "pmc" && (
+          <div className="space-y-4">
+            <MobileSectionTitle title="PMC" subtitle="Charge d'entrainement par semaine de saison." />
+            <MobileMetricSelector
+              value={mobilePmcMetric}
+              onChange={setMobilePmcMetric}
+              options={[
+                { key: "ctl", label: "CTL" },
+                { key: "atl", label: "ATL" },
+                { key: "tsb", label: "TSB" },
+              ]}
+            />
+            <ChartCard
+              title={mobilePmcCharts[mobilePmcMetric].title}
+              data={mobilePmcCharts[mobilePmcMetric].data}
+              seasons={data.seasons}
+              currentSeason={data.currentSeason}
+              unit={mobilePmcCharts[mobilePmcMetric].unit}
+              digits={mobilePmcCharts[mobilePmcMetric].digits}
+              mode={mobilePmcCharts[mobilePmcMetric].mode}
+            />
+            <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-500 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+              CTL = fitness long terme. ATL = fatigue recente. TSB = fraicheur.
+            </div>
+          </div>
+        )}
+
+        {tab === "donnees" && (
+          <div className="space-y-5">
+            <MobileSectionTitle title="Donnees" subtitle="Activites recentes, imports et sources TSS." />
+
+            <div className="space-y-3">
+              <div className="text-sm font-semibold text-slate-900">Dernieres activites</div>
+              {data.mobileData.recentActivities.map((activity) => (
+                <MobileActivityCard key={`${activity.date}-${activity.title ?? ""}`} activity={activity} />
+              ))}
+            </div>
+
+            <div className="space-y-3">
+              <div className="text-sm font-semibold text-slate-900">Imports recents</div>
+              {data.mobileData.recentImports.length ? (
+                data.mobileData.recentImports.map((item) => <MobileImportCard key={item.id} item={item} />)
+              ) : (
+                <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-500 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+                  Aucun import recent.
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <div className="text-sm font-semibold text-slate-900">Sources TSS</div>
+              <div className="grid grid-cols-2 gap-3">
+                {data.mobileData.tssSourceCounts.map((source, index) => (
+                  <SourceSummaryCard
+                    key={source.key}
+                    label={source.label}
+                    count={source.count}
+                    tone={sourceTone(index)}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "records" && (
+          <RecordsView
+            bestWeeks={data.records.bestWeeks}
+            bestMonths={data.records.bestMonths}
+            biggestActivities={data.records.biggestActivities}
+          />
+        )}
+
+        {tab === "projections" && (
+          <ProjectionsView
+            projections={data.projections}
+            currentWeek={data.currentWeek}
+            previousSeason={data.previousSeason}
+          />
+        )}
+      </div>
+
+      <div className="hidden lg:block">
       <div className="flex flex-col gap-4 rounded-[2rem] bg-transparent p-1 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-[2rem] font-semibold text-slate-950">Bonjour !</h1>
@@ -928,10 +1471,12 @@ export function DashboardCharts({
         <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap gap-6 text-sm font-medium text-slate-500">
             {[
+              ["synthese", "Synthese"],
               ["hebdo", "Hebdomadaire"],
               ["mensuel", "Mensuel"],
               ["cumule", "Cumule"],
               ["pmc", "PMC"],
+              ["donnees", "Donnees"],
               ["records", "Records"],
               ["projections", "Projections"],
             ].map(([key, label]) => (
@@ -939,7 +1484,7 @@ export function DashboardCharts({
                 key={key}
                 onClick={() => {
                   setTab(key as DashboardView);
-                  window.history.replaceState(null, "", `/dashboard?view=${key}`);
+                  window.history.replaceState(null, "", key === "synthese" ? "/dashboard" : `/dashboard?view=${key}`);
                 }}
                 className={`relative pb-2 uppercase tracking-wide ${
                   tab === key ? "font-semibold text-violet-600" : "text-slate-500"
@@ -972,6 +1517,59 @@ export function DashboardCharts({
               currentWeek={data.currentWeek}
               previousSeason={data.previousSeason}
             />
+          ) : tab === "donnees" ? (
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.3fr_1fr_1fr]">
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+                <div className="text-[15px] font-medium text-slate-900">Dernieres activites</div>
+                <div className="mt-4 space-y-3">
+                  {data.mobileData.recentActivities.map((activity) => (
+                    <div key={`${activity.date}-${activity.title ?? ""}`} className="border-b border-slate-100 pb-3 last:border-b-0 last:pb-0">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-slate-900">{activity.title || "Activite sans titre"}</div>
+                          <div className="text-xs text-slate-400">{formatDate(activity.date)} · {sourceLabel(activity.tss_source)}</div>
+                        </div>
+                        <div className="text-right text-lg font-semibold text-slate-950">{formatValue(activity.tss_final)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+                <div className="text-[15px] font-medium text-slate-900">Imports recents</div>
+                <div className="mt-4 space-y-3">
+                  {data.mobileData.recentImports.length ? (
+                    data.mobileData.recentImports.map((item) => (
+                      <div key={item.id} className="border-b border-slate-100 pb-3 last:border-b-0 last:pb-0">
+                        <div className="truncate text-sm font-medium text-slate-900">{item.file_name || "Import CSV"}</div>
+                        <div className="mt-1 text-xs text-slate-400">{formatDate(item.created_at, true)}</div>
+                        <div className="mt-2 flex gap-3 text-xs text-slate-500">
+                          <span>{Number(item.activities_upserted ?? 0)} act.</span>
+                          <span>{Number(item.duplicates_ignored ?? 0)} doublons</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-slate-500">Aucun import recent.</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+                <div className="text-[15px] font-medium text-slate-900">Sources TSS</div>
+                <div className="mt-4 grid grid-cols-1 gap-3">
+                  {data.mobileData.tssSourceCounts.map((source, index) => (
+                    <SourceSummaryCard
+                      key={source.key}
+                      label={source.label}
+                      count={source.count}
+                      tone={sourceTone(index)}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               {topChartRows.map((chart) => (
@@ -991,7 +1589,7 @@ export function DashboardCharts({
         </div>
       </div>
 
-      {tab !== "pmc" && tab !== "records" && tab !== "projections" && (
+      {tab !== "pmc" && tab !== "records" && tab !== "projections" && tab !== "donnees" && (
         <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-[0_14px_40px_rgba(15,23,42,0.05)]">
           <h2 className="mb-4 text-xl font-semibold text-slate-950">PMC - Charge d&apos;entrainement</h2>
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr_1fr_300px]">
@@ -1002,6 +1600,7 @@ export function DashboardCharts({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

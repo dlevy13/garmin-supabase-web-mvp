@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
-const DASHBOARD_VIEWS: DashboardView[] = ["hebdo", "mensuel", "cumule", "pmc", "records", "projections"];
+const DASHBOARD_VIEWS: DashboardView[] = ["synthese", "hebdo", "mensuel", "cumule", "pmc", "donnees", "records", "projections"];
 
 function parseView(value: string | string[] | undefined): DashboardView | null {
   const rawValue = Array.isArray(value) ? value[0] : value;
@@ -33,17 +33,24 @@ export default async function DashboardPage({
     .select("*")
     .order("date_day", { ascending: true });
 
+  const { data: imports } = await supabaseAdmin
+    .from("imports")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(8);
+
   const latestActivity = (activities ?? []).at(-1) as { season?: number; week_in_season?: number } | undefined;
   const currentSeason = Number(latestActivity?.season ?? new Date().getFullYear());
   const currentWeek = Number(latestActivity?.week_in_season ?? 1);
-  const activeItem: ShellActiveItem = selectedView ?? "dashboard";
+  const activeItem: ShellActiveItem = selectedView === "synthese" || selectedView == null ? "dashboard" : selectedView;
 
   return (
     <AppShell activeItem={activeItem} currentSeason={currentSeason} currentWeek={currentWeek}>
       <DashboardChartsClient
         activities={(activities ?? []) as any}
         pmc={(pmc ?? []) as any}
-        initialView={selectedView ?? "hebdo"}
+        imports={(imports ?? []) as any}
+        initialView={selectedView ?? "synthese"}
       />
     </AppShell>
   );

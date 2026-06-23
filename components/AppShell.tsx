@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { SignOutButton } from "@/components/SignOutButton";
 
-export type DashboardView = "hebdo" | "mensuel" | "cumule" | "pmc" | "records" | "projections";
+export type DashboardView = "synthese" | "hebdo" | "mensuel" | "cumule" | "pmc" | "donnees" | "records" | "projections";
 export type ShellActiveItem = "dashboard" | DashboardView | "activities" | "imports" | "upload";
 
 type SidebarIconName =
@@ -116,6 +116,35 @@ function SidebarSection({ title, children }: { title: string; children: ReactNod
   );
 }
 
+function isMobileDataItem(activeItem: ShellActiveItem) {
+  return activeItem === "donnees" || activeItem === "activities" || activeItem === "imports" || activeItem === "upload";
+}
+
+function MobileNavLink({
+  href,
+  label,
+  icon,
+  active = false,
+}: {
+  href: string;
+  label: string;
+  icon: SidebarIconName;
+  active?: boolean;
+}) {
+  return (
+    <Link href={href} className="flex min-w-0 flex-1 flex-col items-center gap-1 px-1 py-2 text-center">
+      <span
+        className={`flex h-10 w-10 items-center justify-center rounded-2xl transition ${
+          active ? "bg-indigo-600 shadow-[0_10px_22px_rgba(79,70,229,0.24)]" : "bg-slate-100"
+        }`}
+      >
+        <SidebarIcon name={icon} active={active} />
+      </span>
+      <span className={`text-[0.72rem] leading-4 ${active ? "font-semibold text-slate-950" : "text-slate-500"}`}>{label}</span>
+    </Link>
+  );
+}
+
 export function AppShell({
   activeItem,
   currentSeason,
@@ -131,8 +160,29 @@ export function AppShell({
 
   return (
     <main className="min-h-screen bg-[#f5f7fb]">
-      <div className="flex w-full min-w-[1280px] gap-0">
-        <aside className="flex min-h-screen w-[276px] shrink-0 flex-col bg-[#0d1426] px-5 py-7 text-white shadow-[16px_0_40px_rgba(15,23,42,0.14)]">
+      <div className="sticky top-0 z-30 border-b border-slate-200/70 bg-[#f5f7fb]/95 px-4 py-4 backdrop-blur lg:hidden">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-lg font-semibold text-slate-950">Season Analyzer</div>
+            <div className="mt-1 text-sm text-slate-500">
+              Saison {currentSeason - 1} / {currentSeason} · semaine {currentWeek}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/upload"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-[0_12px_24px_rgba(79,70,229,0.24)]"
+              aria-label="Importer un fichier"
+            >
+              <SidebarIcon name="upload" active />
+            </Link>
+            <SignOutButton compact className="px-3" />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex w-full gap-0 lg:min-w-[1280px]">
+        <aside className="hidden min-h-screen w-[276px] shrink-0 flex-col bg-[#0d1426] px-5 py-7 text-white shadow-[16px_0_40px_rgba(15,23,42,0.14)] lg:flex">
           <div className="flex items-center justify-start gap-4 px-1 py-2">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl">
               <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true">
@@ -191,8 +241,18 @@ export function AppShell({
           </div>
         </aside>
 
-        <div className="min-w-0 flex-1 p-7">{children}</div>
+        <div className="min-w-0 flex-1 px-4 pb-28 pt-5 lg:p-7">{children}</div>
       </div>
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.4rem)] pt-2 shadow-[0_-16px_32px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden">
+        <div className="mx-auto flex max-w-xl items-start justify-between gap-1">
+          <MobileNavLink href="/dashboard" label="Synthese" icon="grid" active={activeItem === "dashboard" || activeItem === "synthese"} />
+          <MobileNavLink href="/dashboard?view=hebdo" label="Hebdo" icon="trend" active={activeItem === "hebdo"} />
+          <MobileNavLink href="/dashboard?view=cumule" label="Cumule" icon="stack" active={activeItem === "cumule"} />
+          <MobileNavLink href="/dashboard?view=pmc" label="PMC" icon="pmc" active={activeItem === "pmc"} />
+          <MobileNavLink href="/dashboard?view=donnees" label="Donnees" icon="activity" active={isMobileDataItem(activeItem)} />
+        </div>
+      </nav>
     </main>
   );
 }
