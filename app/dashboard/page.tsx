@@ -4,6 +4,7 @@ import { requireAuthenticatedUser } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
+const PAGE_SIZE = 1000;
 
 const DASHBOARD_VIEWS: DashboardView[] = ["synthese", "hebdo", "mensuel", "cumule", "pmc", "donnees", "records", "projections"];
 
@@ -11,6 +12,22 @@ function parseView(value: string | string[] | undefined): DashboardView | null {
   const rawValue = Array.isArray(value) ? value[0] : value;
   if (rawValue && DASHBOARD_VIEWS.includes(rawValue as DashboardView)) return rawValue as DashboardView;
   return null;
+}
+
+async function fetchAllRows(table: "activities" | "pmc_daily") {
+  const rows: any[] = [];
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const to = from + PAGE_SIZE - 1;
+    const orderColumn = table === "activities" ? "date" : "date_day";
+    const { data, error } = await supabaseAdmin.from(table).select("*").order(orderColumn, { ascending: true }).range(from, to);
+    if (error) throw new Error(error.message);
+    if (!data?.length) break;
+    rows.push(...data);
+    if (data.length < PAGE_SIZE) break;
+  }
+
+  return rows;
 }
 
 export default async function DashboardPage({
@@ -23,15 +40,10 @@ export default async function DashboardPage({
   const resolvedSearchParams = await searchParams;
   const selectedView = parseView(resolvedSearchParams?.view);
 
-  const { data: activities } = await supabaseAdmin
-    .from("activities")
-    .select("*")
-    .order("date", { ascending: true });
-
-  const { data: pmc } = await supabaseAdmin
-    .from("pmc_daily")
-    .select("*")
-    .order("date_day", { ascending: true });
+  const [activities, pmc] = await Promise.all([
+    fetchAllRows("activities"),
+    fetchAllRows("pmc_daily"),
+  ]);
 
   const { data: imports } = await supabaseAdmin
     .from("imports")
