@@ -13,6 +13,10 @@ import {
 } from "recharts";
 
 const MONTH_LABELS = ["Nov", "Dec", "Jan", "Fev", "Mar", "Avr", "Mai", "Juin", "Juil", "Aout", "Sep", "Oct"];
+const SEASON_START_MONTH_INDEX = 10;
+const SEASON_START_DAY = 1;
+const FALLBACK_MONTH_START_WEEKS = [1, 5, 9, 14, 18, 22, 26, 31, 35, 40, 44, 48];
+const MONTH_LABEL_TICK_INDEXES = [0, 2, 4, 6, 8, 10];
 const CURRENT_SEASON_COLOR = "#7c3aed";
 const SEASON_COLORS = ["#3b82f6", "#cbd5e1", "#ef4444", "#22c55e", "#f59e0b"] as const;
 
@@ -61,8 +65,29 @@ type MetricRow = {
   tsb?: number;
 };
 
-function weekToMonthLabel(week: number) {
-  return MONTH_LABELS[Math.min(11, Math.floor((week - 1) / 4.35))];
+function monthStartWeeksForSeason(season?: number) {
+  if (!Number.isFinite(season)) return FALLBACK_MONTH_START_WEEKS;
+
+  const seasonYear = Number(season);
+  const seasonStart = new Date(seasonYear - 1, SEASON_START_MONTH_INDEX, SEASON_START_DAY);
+
+  return MONTH_LABELS.map((_, index) => {
+    const monthIndex = (SEASON_START_MONTH_INDEX + index) % 12;
+    const year = monthIndex >= SEASON_START_MONTH_INDEX ? seasonYear - 1 : seasonYear;
+    const monthStart = new Date(year, monthIndex, SEASON_START_DAY);
+
+    return Math.floor((monthStart.getTime() - seasonStart.getTime()) / (1000 * 60 * 60 * 24 * 7)) + 1;
+  });
+}
+
+function weekToMonthLabel(week: number, season?: number) {
+  const weekNumber = Math.max(1, Number(week) || 1);
+  const monthIndex = monthStartWeeksForSeason(season).findLastIndex((startWeek) => weekNumber >= startWeek);
+  return MONTH_LABELS[Math.max(0, monthIndex)];
+}
+
+function periodToMonthLabel(period: number) {
+  return MONTH_LABELS[Math.max(0, Math.min(11, Math.round(period) - 1))];
 }
 
 function formatDate(value: string | null | undefined, withTime = false) {
@@ -250,13 +275,14 @@ function pivotBySeason(
   metric: keyof MetricRow,
   seasons: number[],
   maxPeriod: number,
-  mode: "weekly" | "monthly"
+  mode: "weekly" | "monthly",
+  labelSeason?: number
 ) {
   return Array.from({ length: maxPeriod }, (_, index) => {
     const period = index + 1;
     const row: Record<string, string | number | null> = {
       period,
-      label: mode === "monthly" ? MONTH_LABELS[period - 1] : weekToMonthLabel(period),
+      label: mode === "monthly" ? MONTH_LABELS[period - 1] : weekToMonthLabel(period, labelSeason),
     };
 
     for (const season of seasons) {
@@ -334,11 +360,8 @@ function sparklinePoints(values: number[]) {
     .join(" ");
 }
 
-function getWeeklyTicks(maxWeek: number) {
-  const ticks: number[] = [];
-  for (let week = 1; week <= maxWeek; week += 8) ticks.push(week);
-  if (ticks.at(-1) !== maxWeek) ticks.push(maxWeek);
-  return ticks;
+function getWeeklyTicks(season?: number) {
+  return monthStartWeeksForSeason(season).filter((_, index) => MONTH_LABEL_TICK_INDEXES.includes(index));
 }
 
 function getSeasonProgress(week: number) {
@@ -498,6 +521,173 @@ function ChartTooltip({
   );
 }
 
+type ChartMode = "weekly" | "monthly" | "pmc";
+type ChartDatum = Record<string, string | number | null>;
+
+function useMeasuredSize(minWidth: number, minHeight: number) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [size, setSize] = useState({ width: 0, height: minHeight });
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+
+    const update = () => {
+      const width = Math.max(minWidth, Math.round(element.clientWidth));
+      const height = Math.max(minHeight, Math.round(element.clientHeight || minHeight));
+      setSize((current) => (current.width === width && current.height === height ? current : { width, height }));
+    };
+
+    update();
+
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, [minHeight, minWidth]);
+
+  return [ref, size] as const;
+}
+
+function ChartPlot({
+  data,
+  seasons,
+  currentSeason,
+  unit,
+  digits,
+  mode,
+  width,
+  height,
+}: {
+  data: ChartDatum[];
+  seasons: number[];
+  currentSeason: number;
+  unit: string;
+  digits: number;
+  mode: ChartMode;
+  width: number;
+  height: number;
+}) {
+  const xTicks = mode === "monthly" ? MONTH_LABEL_TICK_INDEXES.map((index) => index + 1) : getWeeklyTicks(currentSeason);
+
+  return (
+    <LineChart width={width} height={height} data={data} margin={{ top: 6, right: 14, bottom: 4, left: -4 }}>
+      <CartesianGrid vertical={false} stroke="#eef2f7" />
+      {mode === "monthly" ? (
+        <XAxis
+          dataKey="period"
+          type="number"
+          domain={[1, 12]}
+          ticks={xTicks}
+          tickFormatter={(value) => periodToMonthLabel(Number(value))}
+          tick={{ fontSize: 11, fill: "#94a3b8" }}
+          tickMargin={8}
+          interval={0}
+          axisLine={false}
+          tickLine={false}
+        />
+      ) : (
+        <XAxis
+          dataKey="period"
+          type="number"
+          domain={[1, 52]}
+          ticks={xTicks}
+          tickFormatter={(value) => weekToMonthLabel(Number(value), currentSeason)}
+          tick={{ fontSize: 11, fill: "#94a3b8" }}
+          tickMargin={8}
+          interval={0}
+          axisLine={false}
+          tickLine={false}
+        />
+      )}
+      <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={36} />
+      <Tooltip content={<ChartTooltip unit={unit} digits={digits} currentSeason={currentSeason} />} />
+      {seasons.map((season) => (
+        <Line
+          key={season}
+          type="monotone"
+          dataKey={`Saison ${season}`}
+          stroke={seasonColor(season, seasons, currentSeason)}
+          strokeWidth={season === currentSeason ? 2.7 : 1.8}
+          strokeOpacity={season === currentSeason ? 1 : 0.9}
+          dot={false}
+          connectNulls={false}
+        />
+      ))}
+    </LineChart>
+  );
+}
+
+function ChartModal({
+  title,
+  data,
+  seasons,
+  currentSeason,
+  unit,
+  digits,
+  mode,
+  onClose,
+}: {
+  title: string;
+  data: ChartDatum[];
+  seasons: number[];
+  currentSeason: number;
+  unit: string;
+  digits: number;
+  mode: ChartMode;
+  onClose: () => void;
+}) {
+  const [modalRef, modalSize] = useMeasuredSize(320, 420);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" onClick={onClose}>
+      <div
+        className="flex h-[min(82vh,720px)] w-[min(94vw,1120px)] flex-col rounded-xl bg-white p-5 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-lg font-semibold text-slate-950">{title}</div>
+          <button
+            type="button"
+            className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            onClick={onClose}
+          >
+            Fermer
+          </button>
+        </div>
+        <div ref={modalRef} className="mt-4 min-h-0 flex-1">
+          {modalSize.width > 0 ? (
+            <ChartPlot
+              data={data}
+              seasons={seasons}
+              currentSeason={currentSeason}
+              unit={unit}
+              digits={digits}
+              mode={mode}
+              width={modalSize.width}
+              height={modalSize.height}
+            />
+          ) : (
+            <div className="h-full rounded-xl bg-slate-50" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ChartCard({
   title,
   data,
@@ -513,72 +703,57 @@ function ChartCard({
   currentSeason: number;
   unit?: string;
   digits?: number;
-  mode?: "weekly" | "monthly" | "pmc";
+  mode?: ChartMode;
 }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [chartSize, setChartSize] = useState({ width: 0, height: 180 });
-
-  useEffect(() => {
-    const element = containerRef.current;
-    if (!element) return;
-
-    const update = () => {
-      const width = Math.max(250, Math.round(element.clientWidth));
-      const height = Math.max(180, Math.round(element.clientHeight || 180));
-      setChartSize((current) => (current.width === width && current.height === height ? current : { width, height }));
-    };
-
-    update();
-
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-
-    return () => observer.disconnect();
-  }, []);
-
-  const xTicks = mode === "monthly" ? undefined : getWeeklyTicks(Number(data.at(-1)?.period ?? 1));
+  const [containerRef, chartSize] = useMeasuredSize(250, 180);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-      <div className="text-[15px] font-medium text-slate-900">{title}</div>
-      <div ref={containerRef} className="mt-3 h-44 w-full">
-        {chartSize.width > 0 ? (
-          <LineChart width={chartSize.width} height={chartSize.height} data={data} margin={{ top: 6, right: 8, bottom: 0, left: -10 }}>
-            <CartesianGrid vertical={false} stroke="#eef2f7" />
-            {mode === "monthly" ? (
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-            ) : (
-              <XAxis
-                dataKey="period"
-                type="number"
-                domain={["dataMin", "dataMax"]}
-                ticks={xTicks}
-                tickFormatter={(value) => weekToMonthLabel(Number(value))}
-                tick={{ fontSize: 11, fill: "#94a3b8" }}
-                axisLine={false}
-                tickLine={false}
-              />
-            )}
-            <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={36} />
-            <Tooltip content={<ChartTooltip unit={unit} digits={digits} currentSeason={currentSeason} />} />
-            {seasons.map((season) => (
-              <Line
-                key={season}
-                type="monotone"
-                dataKey={`Saison ${season}`}
-                stroke={seasonColor(season, seasons, currentSeason)}
-                strokeWidth={season === currentSeason ? 2.7 : 1.8}
-                strokeOpacity={season === currentSeason ? 1 : 0.9}
-                dot={false}
-                connectNulls={false}
-              />
-            ))}
-          </LineChart>
-        ) : (
-          <div className="h-full rounded-2xl bg-slate-50" />
-        )}
+    <>
+      <div
+        className="cursor-zoom-in rounded-xl border border-slate-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition hover:border-slate-300 hover:shadow-[0_12px_30px_rgba(15,23,42,0.08)]"
+        onClick={() => setIsExpanded(true)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setIsExpanded(true);
+          }
+        }}
+      >
+        <div className="text-[15px] font-medium text-slate-900">{title}</div>
+        <div ref={containerRef} className="mt-3 h-44 w-full">
+          {chartSize.width > 0 ? (
+            <ChartPlot
+              data={data}
+              seasons={seasons}
+              currentSeason={currentSeason}
+              unit={unit}
+              digits={digits}
+              mode={mode}
+              width={chartSize.width}
+              height={chartSize.height}
+            />
+          ) : (
+            <div className="h-full rounded-2xl bg-slate-50" />
+          )}
+        </div>
       </div>
-    </div>
+
+      {isExpanded && (
+        <ChartModal
+          title={title}
+          data={data}
+          seasons={seasons}
+          currentSeason={currentSeason}
+          unit={unit}
+          digits={digits}
+          mode={mode}
+          onClose={() => setIsExpanded(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -966,10 +1141,10 @@ export function DashboardCharts({
         .sort((a, b) => new Date(a.date_day).getTime() - new Date(b.date_day).getTime())
         .at(-1);
 
-    const weeklyTss = movingAverage(pivotBySeason(weekly, "tss", seasons, currentWeek, "weekly"), seasons);
-    const weeklyHours = movingAverage(pivotBySeason(weekly, "hours", seasons, currentWeek, "weekly"), seasons);
-    const weeklyDistance = movingAverage(pivotBySeason(weekly, "distance", seasons, currentWeek, "weekly"), seasons);
-    const weeklyElevation = movingAverage(pivotBySeason(weekly, "elevation", seasons, currentWeek, "weekly"), seasons);
+    const weeklyTss = movingAverage(pivotBySeason(weekly, "tss", seasons, currentWeek, "weekly", currentSeason), seasons);
+    const weeklyHours = movingAverage(pivotBySeason(weekly, "hours", seasons, currentWeek, "weekly", currentSeason), seasons);
+    const weeklyDistance = movingAverage(pivotBySeason(weekly, "distance", seasons, currentWeek, "weekly", currentSeason), seasons);
+    const weeklyElevation = movingAverage(pivotBySeason(weekly, "elevation", seasons, currentWeek, "weekly", currentSeason), seasons);
     const tssSourceCounts = Array.from(
       currentActivities.reduce((map, activity) => {
         const key = String(activity.tss_source ?? "unknown");
@@ -1060,13 +1235,13 @@ export function DashboardCharts({
         monthlyHours: pivotBySeason(monthly, "hours", seasons, 12, "monthly"),
         monthlyDistance: pivotBySeason(monthly, "distance", seasons, 12, "monthly"),
         monthlyElevation: pivotBySeason(monthly, "elevation", seasons, 12, "monthly"),
-        cumulativeTss: fillForwardBySeason(pivotBySeason(cumulativeWeekly, "tss", seasons, currentWeek, "weekly"), seasons),
-        cumulativeHours: fillForwardBySeason(pivotBySeason(cumulativeHours, "hours", seasons, currentWeek, "weekly"), seasons),
-        cumulativeDistance: fillForwardBySeason(pivotBySeason(cumulativeDistance, "distance", seasons, currentWeek, "weekly"), seasons),
-        cumulativeElevation: fillForwardBySeason(pivotBySeason(cumulativeElevation, "elevation", seasons, currentWeek, "weekly"), seasons),
-        pmcCtl: pivotBySeason(pmcWeekly, "ctl", seasons, currentWeek, "weekly"),
-        pmcAtl: pivotBySeason(pmcWeekly, "atl", seasons, currentWeek, "weekly"),
-        pmcTsb: pivotBySeason(pmcWeekly, "tsb", seasons, currentWeek, "weekly"),
+        cumulativeTss: fillForwardBySeason(pivotBySeason(cumulativeWeekly, "tss", seasons, currentWeek, "weekly", currentSeason), seasons),
+        cumulativeHours: fillForwardBySeason(pivotBySeason(cumulativeHours, "hours", seasons, currentWeek, "weekly", currentSeason), seasons),
+        cumulativeDistance: fillForwardBySeason(pivotBySeason(cumulativeDistance, "distance", seasons, currentWeek, "weekly", currentSeason), seasons),
+        cumulativeElevation: fillForwardBySeason(pivotBySeason(cumulativeElevation, "elevation", seasons, currentWeek, "weekly", currentSeason), seasons),
+        pmcCtl: pivotBySeason(pmcWeekly, "ctl", seasons, currentWeek, "weekly", currentSeason),
+        pmcAtl: pivotBySeason(pmcWeekly, "atl", seasons, currentWeek, "weekly", currentSeason),
+        pmcTsb: pivotBySeason(pmcWeekly, "tsb", seasons, currentWeek, "weekly", currentSeason),
       },
     };
   }, [activities, imports, pmc]);
