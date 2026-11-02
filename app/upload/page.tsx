@@ -27,6 +27,7 @@ export default async function UploadPage() {
           <h1 className="text-3xl font-semibold">Importer un export Garmin</h1>
           <p className="mt-3 text-gray-600">Le fichier CSV est traite mais pas stocke.</p>
           <UploadForm />
+          <Link href="/plan" className="mt-6 inline-block text-sm text-indigo-600 underline">Importer ou mettre à jour le plan d’entraînement →</Link>
         </div>
       </div>
     </AppShell>

@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ returnTo?: string | string[] }> | { returnTo?: string | string[] };
+  searchParams?: Promise<{ returnTo?: string | string[] }>;
 }) {
   const resolvedSearchParams = await searchParams;
   const returnToValue = Array.isArray(resolvedSearchParams?.returnTo)

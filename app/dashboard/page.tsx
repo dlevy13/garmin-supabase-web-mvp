@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ view?: string | string[] }> | { view?: string | string[] };
+  searchParams?: Promise<{ view?: string | string[] }>;
 }) {
   await requireAuthenticatedUser("/dashboard");
 

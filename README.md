@@ -115,3 +115,46 @@ précédente a déjà été exécutée. Les lectures du dashboard et de l’hist
 reclassent également les dates selon la règle corrigée.
 
 Validation du calendrier : `npm test`.
+
+## Suivi du plan annuel
+
+La page `/plan` compare les heures et TSS prévus aux activités Garmin : semaine
+à date, graphiques hebdomadaires et cumulés, détail des journées et historique
+des dix derniers imports. Accessible dans la navigation et depuis `/upload`.
+
+Avant utilisation, exécuter `supabase/migrations/20261104_training_plan.sql`
+dans le SQL Editor de Supabase, y compris pour une nouvelle installation après
+`schema.sql`. Cette migration ajoute les tables du plan et une fonction d'import
+transactionnelle, réservée au serveur. Chaque utilisateur possède son plan ;
+les activités comparées restent celles du jeu de données Garmin de l'application.
+
+Modèle téléchargeable : `/plan-exemple.csv`. Colonnes, dans n'importe quel ordre :
+
+```csv
+date;phase;type semaine;durée (h);Tss cible
+02/11/2026;Reprise;Charge 1;1;40
+03/11/2026;Reprise;Charge 1;0,75;0
+```
+
+Dates `JJ/MM/AAAA` ou `AAAA-MM-JJ`, séparateurs point-virgule, virgule ou tabulation,
+décimales avec point ou virgule (entre guillemets si le séparateur est la virgule).
+Une seule ligne par jour. Une cellule numérique vide signifie « non renseigné » ;
+zéro est un objectif explicite. Phase et type de semaine sont obligatoires.
+Les fichiers sont limités à 2 Mo et 4 000 journées. Une erreur invalide tout l'import.
+
+**Imports progressifs :** importer novembre–janvier, puis novembre–avril trois
+mois plus tard. Les dates communes sont mises à jour, les nouvelles sont ajoutées,
+les absentes sont conservées. Les valeurs vides écrasent les objectifs précédents
+sur les dates présentes. Un fichier identique n'ajoute aucun doublon. Chaque import
+archive ses entrées structurées et les comptes ajoutés/modifiés/inchangés ; le CSV
+brut n'est pas stocké. Le suivi utilise les dernières valeurs enregistrées.
+
+Les journées utilisent UTC, comme les saisons. Le suivi s'arrête à la date
+sélectionnée (aujourd'hui par défaut), incluse. Le réalisé n'est pas extrapolé dans
+le futur. La date du dernier import Garmin est affichée : une absence d'activité
+importée n'atteste pas qu'aucune séance n'a été faite. Les TSS estimés ou manquants
+sont signalés. Les objectifs hebdomadaires incomplets restent inconnus, et les
+cumulés prévus s'arrêtent au premier objectif manquant. La durée réelle utilise
+`duration_hours`, puis `moving_hours` si elle est absente ; le TSS utilise `tss_final`.
+
+Validation des imports et comparaisons : `npm test` et `npx tsc --noEmit`.

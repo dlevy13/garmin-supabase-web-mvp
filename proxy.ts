@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieMethodsServer } from "@supabase/ssr";
 import { getSupabasePublishableKey, supabaseUrl } from "@/lib/supabase/public";
 
-const PROTECTED_PATHS = ["/dashboard", "/upload", "/activities", "/imports", "/seasons"];
+const PROTECTED_PATHS = ["/dashboard", "/upload", "/activities", "/imports", "/seasons", "/plan"];
 
 function isProtectedPath(pathname: string) {
   return PROTECTED_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));

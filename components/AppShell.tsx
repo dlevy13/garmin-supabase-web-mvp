@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { SignOutButton } from "@/components/SignOutButton";
 
 export type DashboardView = "synthese" | "hebdo" | "mensuel" | "cumule" | "pmc" | "donnees" | "records" | "projections";
-export type ShellActiveItem = "dashboard" | DashboardView | "activities" | "imports" | "upload" | "seasons";
+export type ShellActiveItem = "dashboard" | DashboardView | "activities" | "imports" | "upload" | "seasons" | "plan";
 
 type SidebarIconName =
   | "grid"
@@ -210,6 +210,7 @@ export function AppShell({
             </div>
 
             <SidebarSection title="Analyses">
+              <SidebarLink href="/plan" label="Suivi du plan" icon="calendar" active={activeItem === "plan"} />
               <SidebarLink href={analysisHref("hebdo")} label="Hebdomadaire" icon="trend" active={activeItem === "hebdo"} />
               <SidebarLink href={analysisHref("mensuel")} label="Mensuel" icon="calendar" active={activeItem === "mensuel"} />
               <SidebarLink href={analysisHref("cumule")} label="Cumule" icon="stack" active={activeItem === "cumule"} />
@@ -260,6 +261,7 @@ export function AppShell({
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.4rem)] pt-2 shadow-[0_-16px_32px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden">
         <div className="mx-auto flex max-w-xl items-start justify-between gap-1">
           <MobileNavLink href="/dashboard" label="Synthese" icon="grid" active={activeItem === "dashboard" || activeItem === "synthese"} />
+          <MobileNavLink href="/plan" label="Plan" icon="calendar" active={activeItem === "plan"} />
           <MobileNavLink href={analysisHref("hebdo")} label="Hebdo" icon="trend" active={activeItem === "hebdo"} />
           <MobileNavLink href={analysisHref("cumule")} label="Cumule" icon="stack" active={activeItem === "cumule"} />
           <MobileNavLink href={analysisHref("pmc")} label="PMC" icon="pmc" active={activeItem === "pmc"} />
