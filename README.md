@@ -140,6 +140,9 @@ Dates `JJ/MM/AAAA` ou `AAAA-MM-JJ`, séparateurs point-virgule, virgule ou tabul
 décimales avec point ou virgule (entre guillemets si le séparateur est la virgule).
 Une seule ligne par jour. Une cellule numérique vide signifie « non renseigné » ;
 zéro est un objectif explicite. Phase et type de semaine sont obligatoires.
+Les en-têtes abrégés `Type`, `Durée` et `TSS` sont également acceptés.
+L'import lit les exports UTF-8, UTF-16 avec BOM, Windows-1252 et Mac Roman
+(anciens exports Excel) pour préserver les accents.
 Les fichiers sont limités à 2 Mo et 4 000 journées. Une erreur invalide tout l'import.
 
 **Imports progressifs :** importer novembre–janvier, puis novembre–avril trois

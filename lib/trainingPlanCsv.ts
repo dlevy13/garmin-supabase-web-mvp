@@ -3,6 +3,32 @@ import type { PlanDay } from "./trainingPlan";
 
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const columns = ["date", "phase", "typesemaine", "dureeh", "tsscible"];
+const aliases: Record<string, string> = {
+  type: "typesemaine",
+  duree: "dureeh",
+  tss: "tsscible",
+};
+const headerKey = (value: string) => aliases[normalize(value)] ?? normalize(value);
+
+export function parsePlanCsvFile(bytes: Uint8Array): PlanDay[] {
+  let text: string;
+  try {
+    // Excel also exports UTF-16 files with a byte order mark.
+    const encoding = bytes[0] === 0xff && bytes[1] === 0xfe ? "utf-16le"
+      : bytes[0] === 0xfe && bytes[1] === 0xff ? "utf-16be" : "utf-8";
+    text = new TextDecoder(encoding, { fatal: true }).decode(bytes);
+  } catch {
+    // Older Excel exports use Windows-1252 or Mac Roman. The recognized
+    // column names distinguish e.g. Mac Roman "Durée" from "DurŽe".
+    let lastError: unknown;
+    for (const encoding of ["windows-1252", "macintosh"]) {
+      try { return parsePlanCsv(new TextDecoder(encoding, { fatal: true }).decode(bytes)); }
+      catch (error) { lastError = error; }
+    }
+    throw lastError;
+  }
+  return parsePlanCsv(text);
+}
 
 export function parsePlanCsv(text: string): PlanDay[] {
   // Try each separator with the CSV parser so quoted commas remain intact.
@@ -10,14 +36,14 @@ export function parsePlanCsv(text: string): PlanDay[] {
   for (const delimiter of [";", ",", "\t"]) {
     try {
       const candidate = parse(text, { delimiter, bom: true, skip_empty_lines: true, trim: true }) as string[][];
-      if (candidate[0]?.length === 5 && columns.every((column) => candidate[0].map(normalize).includes(column))) {
+      if (candidate[0]?.length === 5 && columns.every((column) => candidate[0].map(headerKey).includes(column))) {
         records = candidate;
         break;
       }
     } catch { /* Another separator may match. */ }
   }
   if (!records) throw new Error("CSV invalide. Colonnes attendues : date, phase, type semaine, durée (h), Tss cible. Vérifie aussi les séparateurs et les guillemets.");
-  const headers = records[0].map(normalize);
+  const headers = records[0].map(headerKey);
   const dates = new Set<string>();
   const rows = records.slice(1).map((cells, index) => {
     const get = (key: string) => cells[headers.indexOf(key)];
@@ -45,4 +71,3 @@ export function parsePlanCsv(text: string): PlanDay[] {
   if (rows.length > 4000) throw new Error("Maximum 4 000 journées par import.");
   return rows.sort((a, b) => a.date.localeCompare(b.date));
 }
-

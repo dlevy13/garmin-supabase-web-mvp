@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth";
-import { parsePlanCsv } from "@/lib/trainingPlanCsv";
+import { parsePlanCsvFile } from "@/lib/trainingPlanCsv";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) return NextResponse.json({ error: "Choisis un fichier CSV." }, { status: 400 });
     if (file.size > 2 * 1024 * 1024) return NextResponse.json({ error: "Le fichier dépasse 2 Mo." }, { status: 400 });
     let entries;
-    try { entries = parsePlanCsv(await file.text()); }
+    try { entries = parsePlanCsvFile(new Uint8Array(await file.arrayBuffer())); }
     catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "CSV invalide." }, { status: 400 }); }
     const { data, error } = await supabaseAdmin.rpc("import_training_plan", {
       p_user_id: user.id, p_file_name: file.name, p_entries: entries,

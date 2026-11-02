@@ -12,7 +12,7 @@ function loadTs(file, overrides = {}) {
   new Function("require", "module", "exports", source)((name) => Object.hasOwn(overrides, name) ? overrides[name] : require(name), module, module.exports);
   return module.exports;
 }
-const { parsePlanCsv } = loadTs("lib/trainingPlanCsv.ts");
+const { parsePlanCsv, parsePlanCsvFile } = loadTs("lib/trainingPlanCsv.ts");
 const { comparePlan, weeklyComparison } = loadTs("lib/trainingPlan.ts");
 const header = "date;phase;type semaine;durée (h);Tss cible\n";
 const day = (date, duration_hours = 1, tss_target = 50) => ({ date, phase: "Base", week_type: "Charge 1", duration_hours, tss_target });
@@ -29,6 +29,23 @@ test("CSV preserves unknown goals separately from explicit rest", () => {
   assert.equal(rows[0].tss_target, null);
   assert.equal(rows[1].duration_hours, 0);
   assert.equal(rows[1].tss_target, 0);
+});
+
+test("Excel abbreviated column names accept Mac Roman and preserve accented content", () => {
+  const bytes = Buffer.from("date;Phase;Type;Dur\x8ee;TSS\r\n02/11/2026;Reprise;All\x8eg\x8ee;0,75;40\r\n", "latin1");
+  const rows = parsePlanCsvFile(bytes);
+  assert.deepEqual(rows, [{ date: "2026-11-02", phase: "Reprise", week_type: "Allégée", duration_hours: 0.75, tss_target: 40 }]);
+});
+
+test("Excel Windows, UTF-8 and UTF-16 exports preserve accented content", () => {
+  const text = "date;Phase;Type;Durée;TSS\r\n02/11/2026;Spécifique;Allégée;1,5;80";
+  for (const bytes of [Buffer.from(text, "latin1"), Buffer.from(text, "utf8"), Buffer.from("\ufeff" + text, "utf16le")]) {
+    const [row] = parsePlanCsvFile(bytes);
+    assert.equal(row.phase, "Spécifique");
+    assert.equal(row.week_type, "Allégée");
+    assert.equal(row.duration_hours, 1.5);
+  }
+  assert.throws(() => parsePlanCsvFile(Buffer.from(text.replace("1,5", "-1"))));
 });
 
 test("invalid CSV rejects duplicates, impossible dates, malformed and negative targets", () => {
@@ -101,7 +118,7 @@ test("plan API requires authentication and rejects invalid files without mutatio
   let calls = 0;
   const createRoute = (user) => loadTs("app/api/import-plan/route.ts", {
     "@/lib/auth": { getAuthenticatedUser: async () => user },
-    "@/lib/trainingPlanCsv": { parsePlanCsv },
+    "@/lib/trainingPlanCsv": { parsePlanCsvFile },
     "@/lib/supabaseAdmin": { supabaseAdmin: { rpc: async () => { calls++; return { data: {}, error: null }; } } },
   });
   const request = () => new Request("http://localhost/api/import-plan", { method: "POST", body: new FormData() });
@@ -117,7 +134,7 @@ test("plan API sends validated entries and authenticated identity in a single at
   let args;
   const route = loadTs("app/api/import-plan/route.ts", {
     "@/lib/auth": { getAuthenticatedUser: async () => ({ id: "user-1" }) },
-    "@/lib/trainingPlanCsv": { parsePlanCsv },
+    "@/lib/trainingPlanCsv": { parsePlanCsvFile },
     "@/lib/supabaseAdmin": { supabaseAdmin: { rpc: async (name, payload) => {
       assert.equal(name, "import_training_plan"); args = payload;
       return { data: { added: 1, updated: 1, unchanged: 0 }, error: null };
