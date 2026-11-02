@@ -1,23 +1,9 @@
 import { supabaseAdmin } from "./supabaseAdmin";
 import { sportConfig } from "./garmin";
+import { seasonFields } from "./season";
 
 function key(d: Date) {
   return d.toISOString().slice(0, 10);
-}
-
-function seasonForDate(d: Date) {
-  return d.getUTCMonth() + 1 >= sportConfig.seasonStartMonth ? d.getUTCFullYear() + 1 : d.getUTCFullYear();
-}
-
-function weekInSeason(d: Date, s: number) {
-  const start = Date.UTC(s - 1, sportConfig.seasonStartMonth - 1, sportConfig.seasonStartDay);
-  const day = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-  return Math.floor((day - start) / (1000 * 60 * 60 * 24 * 7)) + 1;
-}
-
-function monthInSeason(d: Date) {
-  const m = d.getUTCMonth() + 1;
-  return m >= sportConfig.seasonStartMonth ? m - sportConfig.seasonStartMonth + 1 : m + (12 - sportConfig.seasonStartMonth + 1);
 }
 
 export async function recomputePmc() {
@@ -48,13 +34,10 @@ export async function recomputePmc() {
     const tss = byDay.get(key(d)) ?? 0;
     ctl = ctl + (tss - ctl) / sportConfig.ctlDays;
     atl = atl + (tss - atl) / sportConfig.atlDays;
-    const s = seasonForDate(d);
 
     rows.push({
       date_day: key(d),
-      season: s,
-      week_in_season: weekInSeason(d, s),
-      month_in_season: monthInSeason(d),
+      ...seasonFields(d),
       tss,
       ctl,
       atl,

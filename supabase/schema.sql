@@ -1,9 +1,10 @@
 create table if not exists public.activities (
   activity_id text primary key,
   date timestamptz not null,
-  season int not null,
-  week_in_season int not null,
-  month_in_season int not null,
+  -- All three are NULL during the transition outside the 52-week season.
+  season int,
+  week_in_season int,
+  month_in_season int,
   activity_type text,
   title text,
   duration_hours numeric,
@@ -31,9 +32,10 @@ create table if not exists public.activities (
 
 create table if not exists public.pmc_daily (
   date_day date primary key,
-  season int not null,
-  week_in_season int not null,
-  month_in_season int not null,
+  -- All three are NULL during the transition outside the 52-week season.
+  season int,
+  week_in_season int,
+  month_in_season int,
   tss numeric not null default 0,
   ctl numeric not null default 0,
   atl numeric not null default 0,

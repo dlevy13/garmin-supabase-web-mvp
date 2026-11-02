@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { seasonFields } from "./season";
 
 const BIKE_KEYWORDS = ["vélo", "cyclisme", "cyclisme sur route", "cyclisme en salle", "vtt", "mountain bike", "road cycling", "indoor cycling", "virtual ride", "bike", "cycling"];
 
@@ -10,8 +11,6 @@ function envNumber(name: string, fallback: number) {
 export const sportConfig = {
   ftp: envNumber("GARMIN_FTP", 250),
   thresholdHr: envNumber("GARMIN_THRESHOLD_HR", 170),
-  seasonStartMonth: envNumber("GARMIN_SEASON_START_MONTH", 11),
-  seasonStartDay: envNumber("GARMIN_SEASON_START_DAY", 1),
   ctlDays: envNumber("PMC_CTL_DAYS", 42),
   atlDays: envNumber("PMC_ATL_DAYS", 7)
 };
@@ -80,23 +79,6 @@ function parseDate(v?: string) {
   }
   const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function season(d: Date) {
-  return d.getMonth() + 1 >= sportConfig.seasonStartMonth ? d.getFullYear() + 1 : d.getFullYear();
-}
-
-function weekInSeason(d: Date, s: number) {
-  const start = new Date(s - 1, sportConfig.seasonStartMonth - 1, sportConfig.seasonStartDay);
-  const day = new Date(d);
-  day.setHours(0, 0, 0, 0);
-  start.setHours(0, 0, 0, 0);
-  return Math.floor((day.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 7)) + 1;
-}
-
-function monthInSeason(d: Date) {
-  const m = d.getMonth() + 1;
-  return m >= sportConfig.seasonStartMonth ? m - sportConfig.seasonStartMonth + 1 : m + (12 - sportConfig.seasonStartMonth + 1);
 }
 
 function isBike(type: string | null, title: string | null) {
@@ -266,12 +248,9 @@ export function parseGarminCsv(csvText: string) {
     const title = getValue(r, ["Titre", "Title"]) ?? null;
     if (!isBike(activityType, title)) continue;
 
-    const s = season(dateObj);
     let partial: any = {
       date: dateObj.toISOString(),
-      season: s,
-      week_in_season: weekInSeason(dateObj, s),
-      month_in_season: monthInSeason(dateObj),
+      ...seasonFields(dateObj),
       activity_type: activityType,
       title,
       duration_hours: durationHours(getValue(r, ["Durée", "Duration", "Time"])),

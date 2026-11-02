@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { recapRows } from "@/lib/seasonRecap";
+import { seasonStart, seasonWeekCount, weekInSeason, seasonFields, isInSeason, type SeasonFields } from "@/lib/season";
 import type { DashboardView } from "@/components/AppShell";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -14,7 +17,6 @@ import {
 
 const MONTH_LABELS = ["Nov", "Dec", "Jan", "Fev", "Mar", "Avr", "Mai", "Juin", "Juil", "Aout", "Sep", "Oct"];
 const SEASON_START_MONTH_INDEX = 10;
-const SEASON_START_DAY = 1;
 const FALLBACK_MONTH_START_WEEKS = [1, 5, 9, 14, 18, 22, 26, 31, 35, 40, 44, 48];
 const MONTH_LABEL_TICK_INDEXES = [0, 2, 4, 6, 8, 10];
 const CURRENT_SEASON_COLOR = "#7c3aed";
@@ -69,14 +71,14 @@ function monthStartWeeksForSeason(season?: number) {
   if (!Number.isFinite(season)) return FALLBACK_MONTH_START_WEEKS;
 
   const seasonYear = Number(season);
-  const seasonStart = new Date(seasonYear - 1, SEASON_START_MONTH_INDEX, SEASON_START_DAY);
+  const start = seasonStart(seasonYear);
 
   return MONTH_LABELS.map((_, index) => {
     const monthIndex = (SEASON_START_MONTH_INDEX + index) % 12;
     const year = monthIndex >= SEASON_START_MONTH_INDEX ? seasonYear - 1 : seasonYear;
-    const monthStart = new Date(year, monthIndex, SEASON_START_DAY);
+    const monthStart = index === 0 ? start : new Date(Date.UTC(year, monthIndex, 1));
 
-    return Math.floor((monthStart.getTime() - seasonStart.getTime()) / (1000 * 60 * 60 * 24 * 7)) + 1;
+    return weekInSeason(monthStart, seasonYear) ?? 52;
   });
 }
 
@@ -192,7 +194,7 @@ function groupActivitiesByPeriod(
     const current = map.get(key) ?? {
       season: Number(activity.season),
       period,
-      label: periodKey === "month_in_season" ? MONTH_LABELS[period - 1] : weekToMonthLabel(period),
+      label: periodKey === "month_in_season" ? MONTH_LABELS[period - 1] : weekToMonthLabel(period, Number(activity.season)),
       tss: 0,
       hours: 0,
       distance: 0,
@@ -221,7 +223,7 @@ function groupPmcByWeek(pmc: Pmc[], maxWeek: number) {
     const current = map.get(key) ?? {
       season: Number(row.season),
       period,
-      label: weekToMonthLabel(period),
+      label: weekToMonthLabel(period, Number(row.season)),
       ctlTotal: 0,
       atlTotal: 0,
       tsbTotal: 0,
@@ -364,8 +366,8 @@ function getWeeklyTicks(season?: number) {
   return monthStartWeeksForSeason(season).filter((_, index) => MONTH_LABEL_TICK_INDEXES.includes(index));
 }
 
-function getSeasonProgress(week: number) {
-  return Math.min(100, Math.round((week / 52) * 100));
+function getSeasonProgress(week: number, season: number) {
+  return Math.min(100, Math.round((week / seasonWeekCount(season)) * 100));
 }
 
 function Sparkline({ values, color }: { values: number[]; color: string }) {
@@ -590,7 +592,7 @@ function ChartPlot({
         <XAxis
           dataKey="period"
           type="number"
-          domain={[1, 52]}
+          domain={[1, Math.max(...seasons.map(seasonWeekCount), seasonWeekCount(currentSeason))]}
           ticks={xTicks}
           tickFormatter={(value) => weekToMonthLabel(Number(value), currentSeason)}
           tick={{ fontSize: 11, fill: "#94a3b8" }}
@@ -758,13 +760,15 @@ function ChartCard({
 }
 
 function EquivalentDateCard({
+  season,
   seasonRange,
   currentWeek,
 }: {
+  season: number;
   seasonRange: string;
   currentWeek: number;
 }) {
-  const progress = getSeasonProgress(currentWeek);
+  const progress = getSeasonProgress(currentWeek, season);
 
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
@@ -1067,16 +1071,19 @@ function ProjectionsView({
 }
 
 export function DashboardCharts({
-  activities = [],
-  pmc = [],
+  activities: allActivities = [],
+  pmc: allPmc = [],
   imports = [],
   initialView = "synthese",
+  recapSeason,
 }: {
-  activities?: Activity[];
-  pmc?: Pmc[];
+  activities?: (Omit<Activity, keyof SeasonFields> & SeasonFields)[];
+  pmc?: (Omit<Pmc, keyof SeasonFields> & SeasonFields)[];
   imports?: ImportRow[];
   initialView?: DashboardView;
+  recapSeason?: number;
 }) {
+  const router = useRouter();
   const [tab, setTab] = useState<DashboardView>(initialView);
   const [mobileWeeklyMetric, setMobileWeeklyMetric] = useState<"tss" | "hours" | "distance" | "elevation">("tss");
   const [mobileMonthlyMetric, setMobileMonthlyMetric] = useState<"tss" | "hours" | "distance" | "elevation">("tss");
@@ -1088,18 +1095,21 @@ export function DashboardCharts({
   }, [initialView]);
 
   const data = useMemo(() => {
+    // Classify by date as well, so existing rows cannot introduce a week 53.
+    const activities = recapRows(allActivities.map((row) => ({ ...row, ...seasonFields(new Date(row.date)) })).filter(isInSeason), recapSeason);
+    const pmc = recapRows(allPmc.map((row) => ({ ...row, ...seasonFields(new Date(row.date_day)) })).filter(isInSeason), recapSeason);
     if (!activities.length) return null;
 
     const latestActivitySeason = latestSeason(activities);
     const latestComputedPmcSeason = pmc.length ? latestPmcSeason(pmc) : latestActivitySeason;
-    const currentSeason = Math.max(latestActivitySeason, latestComputedPmcSeason);
+    const currentSeason = recapSeason ?? Math.max(latestActivitySeason, latestComputedPmcSeason);
     const latestActivityWeek = activities.some((activity) => Number(activity.season) === currentSeason)
       ? latestWeek(activities, currentSeason)
       : 0;
     const latestComputedPmcWeek = pmc.some((row) => Number(row.season) === currentSeason)
       ? latestPmcWeek(pmc, currentSeason)
       : 0;
-    const currentWeek = Math.max(latestActivityWeek, latestComputedPmcWeek);
+    const currentWeek = recapSeason === undefined ? Math.max(latestActivityWeek, latestComputedPmcWeek) : 52;
     const previousSeason = currentSeason - 1;
     const seasons = Array.from(new Set(activities.filter((activity) => Number(activity.week_in_season) <= currentWeek).map((activity) => Number(activity.season)))).sort((a, b) => a - b);
 
@@ -1193,7 +1203,7 @@ export function DashboardCharts({
           label: "TSS saison",
           current: sum(currentActivities, "tss_final"),
           pace: sum(currentActivities, "tss_final") / Math.max(1, currentWeek),
-          projected: (sum(currentActivities, "tss_final") / Math.max(1, currentWeek)) * 52,
+          projected: (sum(currentActivities, "tss_final") / Math.max(1, currentWeek)) * seasonWeekCount(currentSeason),
           previousFull: sum(previousFullActivities, "tss_final"),
           unit: "",
           digits: 0,
@@ -1202,7 +1212,7 @@ export function DashboardCharts({
           label: "Heures",
           current: sum(currentActivities, "duration_hours"),
           pace: sum(currentActivities, "duration_hours") / Math.max(1, currentWeek),
-          projected: (sum(currentActivities, "duration_hours") / Math.max(1, currentWeek)) * 52,
+          projected: (sum(currentActivities, "duration_hours") / Math.max(1, currentWeek)) * seasonWeekCount(currentSeason),
           previousFull: sum(previousFullActivities, "duration_hours"),
           unit: " h",
           digits: 1,
@@ -1211,7 +1221,7 @@ export function DashboardCharts({
           label: "Distance",
           current: sum(currentActivities, "distance_km"),
           pace: sum(currentActivities, "distance_km") / Math.max(1, currentWeek),
-          projected: (sum(currentActivities, "distance_km") / Math.max(1, currentWeek)) * 52,
+          projected: (sum(currentActivities, "distance_km") / Math.max(1, currentWeek)) * seasonWeekCount(currentSeason),
           previousFull: sum(previousFullActivities, "distance_km"),
           unit: " km",
           digits: 1,
@@ -1220,7 +1230,7 @@ export function DashboardCharts({
           label: "D+",
           current: sum(currentActivities, "elevation_m"),
           pace: sum(currentActivities, "elevation_m") / Math.max(1, currentWeek),
-          projected: (sum(currentActivities, "elevation_m") / Math.max(1, currentWeek)) * 52,
+          projected: (sum(currentActivities, "elevation_m") / Math.max(1, currentWeek)) * seasonWeekCount(currentSeason),
           previousFull: sum(previousFullActivities, "elevation_m"),
           unit: " m",
           digits: 0,
@@ -1244,7 +1254,7 @@ export function DashboardCharts({
         pmcTsb: pivotBySeason(pmcWeekly, "tsb", seasons, currentWeek, "weekly", currentSeason),
       },
     };
-  }, [activities, imports, pmc]);
+  }, [allActivities, imports, allPmc, recapSeason]);
 
   if (!data) {
     return <div className="rounded-3xl bg-white p-8">Aucune donnée pour le moment.</div>;
@@ -1574,7 +1584,7 @@ export function DashboardCharts({
       <div className="hidden lg:block">
       <div className="flex flex-col gap-4 rounded-[2rem] bg-transparent p-1 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-[2rem] font-semibold text-slate-950">Bonjour !</h1>
+          <h1 className="text-[2rem] font-semibold text-slate-950">{recapSeason === undefined ? "Bonjour !" : `Bilan ${data.seasonRange}`}</h1>
           <p className="mt-1.5 text-[0.98rem] text-slate-500">
             Voici un apercu de la saison {data.seasonRange} jusqu&apos;a la semaine {data.currentWeek}.
           </p>
@@ -1659,7 +1669,11 @@ export function DashboardCharts({
                 key={key}
                 onClick={() => {
                   setTab(key as DashboardView);
-                  window.history.replaceState(null, "", key === "synthese" ? "/dashboard" : `/dashboard?view=${key}`);
+                  const url = new URL(window.location.href);
+                  if (key === "synthese") url.searchParams.delete("view");
+                  else url.searchParams.set("view", key);
+                  if (recapSeason !== undefined) router.replace(`${url.pathname}${url.search}`, { scroll: false });
+                  else window.history.replaceState(null, "", `${url.pathname}${url.search}`);
                 }}
                 className={`relative pb-2 uppercase tracking-wide ${
                   tab === key ? "font-semibold text-violet-600" : "text-slate-500"
@@ -1771,7 +1785,7 @@ export function DashboardCharts({
             <ChartCard title="CTL (Fitness)" data={data.topCharts.pmcCtl} seasons={data.seasons} currentSeason={data.currentSeason} digits={1} mode="pmc" />
             <ChartCard title="ATL (Fatigue)" data={data.topCharts.pmcAtl} seasons={data.seasons} currentSeason={data.currentSeason} digits={1} mode="pmc" />
             <ChartCard title="TSB (Forme)" data={data.topCharts.pmcTsb} seasons={data.seasons} currentSeason={data.currentSeason} digits={1} mode="pmc" />
-            <EquivalentDateCard seasonRange={data.seasonRange} currentWeek={data.currentWeek} />
+            <EquivalentDateCard season={data.currentSeason} seasonRange={data.seasonRange} currentWeek={data.currentWeek} />
           </div>
         </div>
       )}

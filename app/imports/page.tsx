@@ -1,3 +1,4 @@
+import { seasonContext } from "@/lib/season";
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { requireAuthenticatedUser } from "@/lib/auth";
@@ -25,16 +26,15 @@ export default async function ImportsPage() {
 
   const { data: latestActivities } = await supabaseAdmin
     .from("activities")
-    .select("season,week_in_season")
+    .select("date")
     .order("date", { ascending: false })
     .limit(1);
 
-  const latestActivity = latestActivities?.[0] as { season?: number; week_in_season?: number } | undefined;
-  const currentSeason = Number(latestActivity?.season ?? new Date().getFullYear());
-  const currentWeek = Number(latestActivity?.week_in_season ?? 1);
+  const latestActivity = latestActivities?.[0] as { date?: string } | undefined;
+  const { currentSeason, currentWeek, isTransition } = seasonContext(new Date(latestActivity?.date ?? Date.now()));
 
   return (
-    <AppShell activeItem="imports" currentSeason={currentSeason} currentWeek={currentWeek}>
+    <AppShell activeItem="imports" currentSeason={currentSeason} currentWeek={currentWeek} isTransition={isTransition}>
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <Link href="/dashboard" className="text-sm text-gray-500">

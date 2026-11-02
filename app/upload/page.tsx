@@ -1,3 +1,4 @@
+import { seasonContext } from "@/lib/season";
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { UploadForm } from "@/components/UploadForm";
@@ -11,16 +12,15 @@ export default async function UploadPage() {
 
   const { data: latestActivities } = await supabaseAdmin
     .from("activities")
-    .select("season,week_in_season")
+    .select("date")
     .order("date", { ascending: false })
     .limit(1);
 
-  const latestActivity = latestActivities?.[0] as { season?: number; week_in_season?: number } | undefined;
-  const currentSeason = Number(latestActivity?.season ?? new Date().getFullYear());
-  const currentWeek = Number(latestActivity?.week_in_season ?? 1);
+  const latestActivity = latestActivities?.[0] as { date?: string } | undefined;
+  const { currentSeason, currentWeek, isTransition } = seasonContext(new Date(latestActivity?.date ?? Date.now()));
 
   return (
-    <AppShell activeItem="upload" currentSeason={currentSeason} currentWeek={currentWeek}>
+    <AppShell activeItem="upload" currentSeason={currentSeason} currentWeek={currentWeek} isTransition={isTransition}>
       <div className="mx-auto max-w-3xl">
         <Link href="/" className="text-sm text-gray-500">← Retour</Link>
         <div className="mt-6 rounded-3xl bg-white p-10 shadow-sm">

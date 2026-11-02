@@ -1,5 +1,6 @@
 "use client";
 
+import { seasonFields } from "@/lib/season";
 import { useMemo, useState } from "react";
 
 type ActivityRow = {
@@ -13,7 +14,7 @@ type ActivityRow = {
   tss_original: number | null;
   tss_final: number | null;
   tss_source: string | null;
-  season: number;
+  season: number | null;
 };
 
 function formatDate(value: string) {
@@ -39,14 +40,15 @@ function formatNumber(value: number | null, suffix = "", digits = 0) {
   return `${Number(value).toFixed(digits)}${suffix}`;
 }
 
-export function ActivitiesTable({ activities }: { activities: ActivityRow[] }) {
+export function ActivitiesTable({ activities: rawActivities }: { activities: ActivityRow[] }) {
+  const activities = useMemo(() => rawActivities.map((row) => ({ ...row, ...seasonFields(new Date(row.date)) })), [rawActivities]);
   const [query, setQuery] = useState("");
   const [seasonFilter, setSeasonFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
 
   const seasons = useMemo(
-    () => Array.from(new Set(activities.map((activity) => String(activity.season)))).sort().reverse(),
+    () => Array.from(new Set(activities.filter((activity) => activity.season !== null).map((activity) => String(activity.season)))).sort().reverse(),
     [activities]
   );
 
@@ -78,7 +80,8 @@ export function ActivitiesTable({ activities }: { activities: ActivityRow[] }) {
     const normalizedQuery = query.trim().toLowerCase();
 
     return activities.filter((activity) => {
-      if (seasonFilter !== "all" && String(activity.season) !== seasonFilter) return false;
+      if (seasonFilter === "transition" && activity.season !== null) return false;
+      if (seasonFilter !== "all" && seasonFilter !== "transition" && String(activity.season) !== seasonFilter) return false;
       if (typeFilter !== "all" && (activity.activity_type ?? "") !== typeFilter) return false;
       if (sourceFilter !== "all" && (activity.tss_source ?? "") !== sourceFilter) return false;
       if (!normalizedQuery) return true;
@@ -124,6 +127,7 @@ export function ActivitiesTable({ activities }: { activities: ActivityRow[] }) {
           className="rounded-2xl border border-gray-200 px-4 py-3 outline-none focus:border-gray-400"
         >
           <option value="all">Toutes les saisons</option>
+          <option value="transition">Transition hors saison</option>
           {seasons.map((season) => (
             <option key={season} value={season}>
               Saison {season}
@@ -177,7 +181,9 @@ export function ActivitiesTable({ activities }: { activities: ActivityRow[] }) {
             {filteredActivities.map((activity) => (
               <tr key={activity.activity_id} className="border-b border-gray-100 align-top last:border-b-0">
                 <td className="px-3 py-4 whitespace-nowrap">{formatDate(activity.date)}</td>
-                <td className="px-3 py-4 font-medium text-gray-900">{activity.title || "—"}</td>
+                <td className="px-3 py-4 font-medium text-gray-900">{activity.title || "—"}
+                  {activity.season === null && <div className="mt-1 text-xs text-amber-700">Transition hors saison</div>}
+                </td>
                 <td className="px-3 py-4">{activity.activity_type || "—"}</td>
                 <td className="px-3 py-4 whitespace-nowrap">{formatHours(activity.duration_hours)}</td>
                 <td className="px-3 py-4 whitespace-nowrap">{formatNumber(activity.distance_km, " km", 1)}</td>

@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { seasonWeekCount } from "@/lib/season";
 import type { ReactNode } from "react";
 import { SignOutButton } from "@/components/SignOutButton";
 
 export type DashboardView = "synthese" | "hebdo" | "mensuel" | "cumule" | "pmc" | "donnees" | "records" | "projections";
-export type ShellActiveItem = "dashboard" | DashboardView | "activities" | "imports" | "upload";
+export type ShellActiveItem = "dashboard" | DashboardView | "activities" | "imports" | "upload" | "seasons";
 
 type SidebarIconName =
   | "grid"
@@ -149,14 +150,20 @@ export function AppShell({
   activeItem,
   currentSeason,
   currentWeek,
+  isTransition = false,
+  archiveSeason,
   children,
 }: {
   activeItem: ShellActiveItem;
   currentSeason: number;
   currentWeek: number;
+  isTransition?: boolean;
+  archiveSeason?: number;
   children: ReactNode;
 }) {
-  const seasonProgress = Math.min(100, Math.round((Math.max(1, currentWeek) / 52) * 100));
+  const analysisHref = (view: DashboardView) => archiveSeason === undefined
+    ? `/dashboard?view=${view}` : `/seasons?season=${archiveSeason}&view=${view}`;
+  const seasonProgress = Math.min(100, Math.round((Math.max(1, currentWeek) / seasonWeekCount(currentSeason)) * 100));
 
   return (
     <main className="min-h-screen bg-[#f5f7fb]">
@@ -165,7 +172,7 @@ export function AppShell({
           <div className="min-w-0">
             <div className="text-lg font-semibold text-slate-950">Season Analyzer</div>
             <div className="mt-1 text-sm text-slate-500">
-              Saison {currentSeason - 1} / {currentSeason} · semaine {currentWeek}
+              {isTransition ? "Transition hors saison" : `Saison ${currentSeason - 1} / ${currentSeason} · semaine ${currentWeek}`}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -203,10 +210,10 @@ export function AppShell({
             </div>
 
             <SidebarSection title="Analyses">
-              <SidebarLink href="/dashboard?view=hebdo" label="Hebdomadaire" icon="trend" active={activeItem === "hebdo"} />
-              <SidebarLink href="/dashboard?view=mensuel" label="Mensuel" icon="calendar" active={activeItem === "mensuel"} />
-              <SidebarLink href="/dashboard?view=cumule" label="Cumule" icon="stack" active={activeItem === "cumule"} />
-              <SidebarLink href="/dashboard?view=pmc" label="PMC" icon="pmc" active={activeItem === "pmc"} />
+              <SidebarLink href={analysisHref("hebdo")} label="Hebdomadaire" icon="trend" active={activeItem === "hebdo"} />
+              <SidebarLink href={analysisHref("mensuel")} label="Mensuel" icon="calendar" active={activeItem === "mensuel"} />
+              <SidebarLink href={analysisHref("cumule")} label="Cumule" icon="stack" active={activeItem === "cumule"} />
+              <SidebarLink href={analysisHref("pmc")} label="PMC" icon="pmc" active={activeItem === "pmc"} />
             </SidebarSection>
 
             <SidebarSection title="Donnees">
@@ -215,13 +222,17 @@ export function AppShell({
             </SidebarSection>
 
             <SidebarSection title="Performance">
-              <SidebarLink href="/dashboard?view=records" label="Records" icon="trophy" active={activeItem === "records"} />
-              <SidebarLink href="/dashboard?view=projections" label="Projections" icon="clock" active={activeItem === "projections"} />
+              <SidebarLink href={analysisHref("records")} label="Records" icon="trophy" active={activeItem === "records"} />
+              <SidebarLink href={analysisHref("projections")} label="Projections" icon="clock" active={activeItem === "projections"} />
+            </SidebarSection>
+
+            <SidebarSection title="Saisons">
+              <SidebarLink href="/seasons" label="Récap des saisons" icon="calendar" active={activeItem === "seasons"} />
             </SidebarSection>
           </nav>
 
           <div className="mt-auto rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-5">
-            <div className="text-sm" style={{ color: "#ffffff", fontWeight: 400 }}>Saison en cours</div>
+            <div className="text-sm" style={{ color: "#ffffff", fontWeight: 400 }}>{isTransition ? "Transition hors saison" : "Saison en cours"}</div>
             <div className="mt-2 text-[1.7rem]" style={{ color: "#ffffff", fontWeight: 400 }}>
               {currentSeason - 1} / {currentSeason}
             </div>
@@ -241,16 +252,19 @@ export function AppShell({
           </div>
         </aside>
 
-        <div className="min-w-0 flex-1 px-4 pb-28 pt-5 lg:p-7">{children}</div>
+        <div className="min-w-0 flex-1 px-4 pb-28 pt-5 lg:p-7">
+          {children}
+        </div>
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.4rem)] pt-2 shadow-[0_-16px_32px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden">
         <div className="mx-auto flex max-w-xl items-start justify-between gap-1">
           <MobileNavLink href="/dashboard" label="Synthese" icon="grid" active={activeItem === "dashboard" || activeItem === "synthese"} />
-          <MobileNavLink href="/dashboard?view=hebdo" label="Hebdo" icon="trend" active={activeItem === "hebdo"} />
-          <MobileNavLink href="/dashboard?view=cumule" label="Cumule" icon="stack" active={activeItem === "cumule"} />
-          <MobileNavLink href="/dashboard?view=pmc" label="PMC" icon="pmc" active={activeItem === "pmc"} />
-          <MobileNavLink href="/dashboard?view=donnees" label="Donnees" icon="activity" active={isMobileDataItem(activeItem)} />
+          <MobileNavLink href={analysisHref("hebdo")} label="Hebdo" icon="trend" active={activeItem === "hebdo"} />
+          <MobileNavLink href={analysisHref("cumule")} label="Cumule" icon="stack" active={activeItem === "cumule"} />
+          <MobileNavLink href={analysisHref("pmc")} label="PMC" icon="pmc" active={activeItem === "pmc"} />
+          <MobileNavLink href={analysisHref("donnees")} label="Donnees" icon="activity" active={isMobileDataItem(activeItem)} />
+          <MobileNavLink href="/seasons" label="Récap" icon="calendar" active={activeItem === "seasons"} />
         </div>
       </nav>
     </main>
