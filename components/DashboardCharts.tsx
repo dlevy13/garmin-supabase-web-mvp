@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { recapRows } from "@/lib/seasonRecap";
+import { recapRows, annualSeasonTotals, type AnnualTotal } from "@/lib/seasonRecap";
 import { seasonStart, seasonWeekCount, weekInSeason, seasonFields, isInSeason, type SeasonFields } from "@/lib/season";
 import type { DashboardView } from "@/components/AppShell";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -1023,6 +1023,39 @@ function RecordsView({
   );
 }
 
+function AnnualTotalsView({ totals }: { totals: AnnualTotal[] }) {
+  const [latest, ...previous] = totals;
+  if (!latest) return null;
+  const metrics = [
+    { key: "tss", label: "TSS saison", unit: "", digits: 0 },
+    { key: "hours", label: "Heures", unit: " h", digits: 1 },
+    { key: "distance", label: "Distance", unit: " km", digits: 1 },
+    { key: "elevation", label: "D+", unit: " m", digits: 0 },
+  ] as const;
+
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+      {metrics.map((metric) => (
+        <div key={metric.key} className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{metric.label}</div>
+          <div className="mt-4 text-sm text-slate-400">Saison {latest.season}</div>
+          <div className="mt-1 text-3xl font-bold text-slate-950">
+            {formatValue(latest[metric.key], metric.unit, metric.digits)}
+          </div>
+          <div className="mt-6 space-y-2 text-sm text-slate-500">
+            {previous.map((total) => (
+              <div key={total.season} className="flex justify-between gap-4">
+                <span>Saison {total.season}</span>
+                <span className="text-slate-900">{formatValue(total[metric.key], metric.unit, metric.digits)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ProjectionsView({
   projections,
   currentWeek,
@@ -1198,6 +1231,7 @@ export function DashboardCharts({
         recentImports,
         tssSourceCounts,
       },
+      annualTotals: recapSeason === undefined ? [] : annualSeasonTotals(activities, recapSeason),
       projections: [
         {
           label: "TSS saison",
@@ -1259,6 +1293,12 @@ export function DashboardCharts({
   if (!data) {
     return <div className="rounded-3xl bg-white p-8">Aucune donnée pour le moment.</div>;
   }
+
+  const annualSummary = recapSeason !== undefined ? (
+    <AnnualTotalsView totals={data.annualTotals} />
+  ) : (
+    <ProjectionsView projections={data.projections} currentWeek={data.currentWeek} previousSeason={data.previousSeason} />
+  );
 
   const currentSeasonSeries = {
     tss: getSeasonSeries(data.topCharts.cumulativeTss, data.currentSeason),
@@ -1573,11 +1613,7 @@ export function DashboardCharts({
         )}
 
         {tab === "projections" && (
-          <ProjectionsView
-            projections={data.projections}
-            currentWeek={data.currentWeek}
-            previousSeason={data.previousSeason}
-          />
+          annualSummary
         )}
       </div>
 
@@ -1663,7 +1699,7 @@ export function DashboardCharts({
               ["pmc", "PMC"],
               ["donnees", "Donnees"],
               ["records", "Records"],
-              ["projections", "Projections"],
+              ["projections", recapSeason === undefined ? "Projections" : "Total annuel"],
             ].map(([key, label]) => (
               <button
                 key={key}
@@ -1701,11 +1737,7 @@ export function DashboardCharts({
               biggestActivities={data.records.biggestActivities}
             />
           ) : tab === "projections" ? (
-            <ProjectionsView
-              projections={data.projections}
-              currentWeek={data.currentWeek}
-              previousSeason={data.previousSeason}
-            />
+            annualSummary
           ) : tab === "donnees" ? (
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.3fr_1fr_1fr]">
               <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">

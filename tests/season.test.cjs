@@ -172,3 +172,27 @@ test("recap preserves week 52 and excludes later seasons and transition activity
   assert.equal(recapRows(rows, 2027).length, 1);
   assert.deepEqual(recapRows(rows), rows);
 });
+
+
+test("annual totals show actual full-season metrics in descending order", () => {
+  const { annualSeasonTotals } = loadTs("lib/seasonRecap.ts");
+  const row = (season, tss_final, duration_hours, distance_km, elevation_m) =>
+    ({ season, tss_final, duration_hours, distance_km, elevation_m });
+  const rows = [
+    row(2025, 50, 1, 30, 300),
+    row(2026, 100, 2, 60, 600),
+    row(2023, null, null, null, null),
+    row(2026, 150, 3, 90, 900),
+    row(2024, 80, 1.5, 40, 400),
+    row(2027, 999, 99, 999, 9999),
+    row(null, 999, 99, 999, 9999),
+  ];
+  assert.deepEqual(annualSeasonTotals(rows, 2026), [
+    { season: 2026, tss: 250, hours: 5, distance: 150, elevation: 1500 },
+    { season: 2025, tss: 50, hours: 1, distance: 30, elevation: 300 },
+    { season: 2024, tss: 80, hours: 1.5, distance: 40, elevation: 400 },
+    { season: 2023, tss: 0, hours: 0, distance: 0, elevation: 0 },
+  ]);
+  assert.equal(annualSeasonTotals(rows, 2025)[0].season, 2025);
+  assert.deepEqual(annualSeasonTotals([], 2026), []);
+});

@@ -223,7 +223,7 @@ export function AppShell({
 
             <SidebarSection title="Performance">
               <SidebarLink href={analysisHref("records")} label="Records" icon="trophy" active={activeItem === "records"} />
-              <SidebarLink href={analysisHref("projections")} label="Projections" icon="clock" active={activeItem === "projections"} />
+              <SidebarLink href={analysisHref("projections")} label={archiveSeason === undefined ? "Projections" : "Total annuel"} icon="clock" active={activeItem === "projections"} />
             </SidebarSection>
 
             <SidebarSection title="Saisons">

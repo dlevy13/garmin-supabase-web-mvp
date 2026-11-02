@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 const VIEWS = [
   ["synthese", "Synthèse"], ["hebdo", "Hebdomadaire"], ["mensuel", "Mensuel"],
   ["cumule", "Cumulé"], ["pmc", "PMC"], ["records", "Records"],
+  ["projections", "Total annuel"],
 ] as const;
 
 function formatDate(date: Date) {
