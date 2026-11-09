@@ -20,6 +20,21 @@ function loadTs(file, overrides = {}) {
 
 const { seasonStart, seasonEnd, seasonWeekCount, seasonFields, seasonForDate, weekInSeason, seasonContext, isInSeason } = loadTs("lib/season.ts");
 const { parseGarminCsv } = loadTs("lib/garmin.ts");
+const { seasonChartRange } = loadTs("lib/seasonChartRange.ts");
+
+test("chart range grows from season start through the following month", () => {
+  assert.deepEqual(seasonChartRange(2027, new Date("2026-11-09T12:00:00Z")), { months: 2, weeks: 9 });
+  assert.deepEqual(seasonChartRange(2027, new Date("2026-12-01T12:00:00Z")), { months: 3, weeks: 13 });
+  assert.deepEqual(seasonChartRange(2027, new Date("2027-01-01T12:00:00Z")), { months: 4, weeks: 17 });
+  assert.deepEqual(seasonChartRange(2027, new Date("2027-09-01T12:00:00Z")), { months: 12, weeks: 52 });
+  assert.deepEqual(seasonChartRange(2027, new Date("2027-10-31T12:00:00Z")), { months: 12, weeks: 52 });
+});
+
+test("completed seasons and transition retain the full chart range", () => {
+  assert.deepEqual(seasonChartRange(2026, new Date("2026-11-09T12:00:00Z")), { months: 12, weeks: 52 });
+  assert.deepEqual(seasonChartRange(2028, new Date("2028-10-30T12:00:00Z")), { months: 12, weeks: 52 });
+  assert.deepEqual(seasonChartRange(2029, new Date("2028-11-06T12:00:00Z")), { months: 2, weeks: 8 });
+});
 
 test("2027 season starts Monday November 2 and ends Sunday October 31", () => {
   assert.equal(seasonStart(2027).toISOString(), "2026-11-02T00:00:00.000Z");

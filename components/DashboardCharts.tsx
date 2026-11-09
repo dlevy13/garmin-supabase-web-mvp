@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { recapRows, annualSeasonTotals, type AnnualTotal } from "@/lib/seasonRecap";
 import { seasonStart, seasonWeekCount, weekInSeason, seasonFields, isInSeason, type SeasonFields } from "@/lib/season";
+import { seasonChartRange } from "@/lib/seasonChartRange";
 import type { DashboardView } from "@/components/AppShell";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -362,10 +363,6 @@ function sparklinePoints(values: number[]) {
     .join(" ");
 }
 
-function getWeeklyTicks(season?: number) {
-  return monthStartWeeksForSeason(season).filter((_, index) => MONTH_LABEL_TICK_INDEXES.includes(index));
-}
-
 function getSeasonProgress(week: number, season: number) {
   return Math.min(100, Math.round((week / seasonWeekCount(season)) * 100));
 }
@@ -570,16 +567,25 @@ function ChartPlot({
   width: number;
   height: number;
 }) {
-  const xTicks = mode === "monthly" ? MONTH_LABEL_TICK_INDEXES.map((index) => index + 1) : getWeeklyTicks(currentSeason);
+  const range = seasonChartRange(currentSeason);
+  const maxPeriod = mode === "monthly" ? range.months : range.weeks;
+  const visibleData = data.filter((row) => Number(row.period) <= maxPeriod);
+  const monthIndexes = MONTH_LABELS.map((_, index) => index).filter((index) =>
+    index < range.months && (range.months <= 6 || MONTH_LABEL_TICK_INDEXES.includes(index))
+  );
+  const monthStartWeeks = monthStartWeeksForSeason(currentSeason);
+  const xTicks = mode === "monthly"
+    ? monthIndexes.map((index) => index + 1)
+    : monthIndexes.map((index) => monthStartWeeks[index]);
 
   return (
-    <LineChart width={width} height={height} data={data} margin={{ top: 6, right: 14, bottom: 4, left: -4 }}>
+    <LineChart width={width} height={height} data={visibleData} margin={{ top: 6, right: 14, bottom: 4, left: -4 }}>
       <CartesianGrid vertical={false} stroke="#eef2f7" />
       {mode === "monthly" ? (
         <XAxis
           dataKey="period"
           type="number"
-          domain={[1, 12]}
+          domain={[1, maxPeriod]}
           ticks={xTicks}
           tickFormatter={(value) => periodToMonthLabel(Number(value))}
           tick={{ fontSize: 11, fill: "#94a3b8" }}
@@ -592,7 +598,7 @@ function ChartPlot({
         <XAxis
           dataKey="period"
           type="number"
-          domain={[1, Math.max(...seasons.map(seasonWeekCount), seasonWeekCount(currentSeason))]}
+          domain={[1, maxPeriod]}
           ticks={xTicks}
           tickFormatter={(value) => weekToMonthLabel(Number(value), currentSeason)}
           tick={{ fontSize: 11, fill: "#94a3b8" }}
@@ -612,7 +618,7 @@ function ChartPlot({
           stroke={seasonColor(season, seasons, currentSeason)}
           strokeWidth={season === currentSeason ? 2.7 : 1.8}
           strokeOpacity={season === currentSeason ? 1 : 0.9}
-          dot={false}
+          dot={visibleData.filter((row) => row[`Saison ${season}`] != null).length === 1 ? { r: 3 } : false}
           connectNulls={false}
         />
       ))}
