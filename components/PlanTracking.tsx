@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { addDays, comparePlan, monday, weeklyComparison, type ActualActivity, type PlanDay } from "@/lib/trainingPlan";
 import { seasonForDate } from "@/lib/season";
@@ -9,6 +9,65 @@ const format = (value: number | null | undefined) => value == null ? "—" : val
 const label = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString("fr-FR", { timeZone: "UTC", day: "2-digit", month: "2-digit" });
 const delta = (actual: number | null, planned: number | null) => actual == null || planned == null ? "—" : `${actual - planned > 0 ? "+" : ""}${format(actual - planned)}`;
 const rate = (actual: number | null, planned: number | null) => actual == null || planned == null || planned === 0 ? "—" : `${Math.round(actual / planned * 100)} %`;
+
+function PlanChartCard({ title, children }: { title: string; children: ReactNode }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const cardRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsExpanded(false);
+      if (event.key === "Tab") {
+        event.preventDefault();
+        closeRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      cardRef.current?.focus();
+    };
+  }, [isExpanded]);
+
+  return <>
+    <section
+      ref={cardRef}
+      className="min-w-0 cursor-zoom-in rounded-3xl bg-white p-6 shadow-sm transition hover:shadow-md"
+      role="button"
+      tabIndex={0}
+      aria-label={`Agrandir : ${title}`}
+      aria-haspopup="dialog"
+      onClick={() => setIsExpanded(true)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          setIsExpanded(true);
+        }
+      }}
+    >
+      <h2 className="mb-4 text-lg font-semibold">{title}</h2>
+      <div className="h-[280px] w-full">{children}</div>
+    </section>
+    {isExpanded && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" onClick={() => setIsExpanded(false)}>
+      <div
+        className="flex h-[min(82vh,720px)] w-[min(94vw,1120px)] flex-col rounded-xl bg-white p-5 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-lg font-semibold text-slate-950">{title}</div>
+          <button ref={closeRef} type="button" className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50" onClick={() => setIsExpanded(false)}>Fermer</button>
+        </div>
+        <div className="mt-4 min-h-0 flex-1">{children}</div>
+      </div>
+    </div>}
+  </>;
+}
 
 export function PlanTracking({ plan, activities, today, lastImport }: { plan: PlanDay[]; activities: ActualActivity[]; today: string; lastImport: string | null }) {
   const [cutoff, setCutoff] = useState(today);
@@ -57,14 +116,12 @@ export function PlanTracking({ plan, activities, today, lastImport }: { plan: Pl
       </> : <p className="mt-3 text-sm text-slate-500">Aucune semaine du plan ne couvre cette date.</p>}
     </section>
 
-    <div className="grid gap-6 xl:grid-cols-2">{(["hours", "tss"] as const).map((metric) => <section key={metric} className="min-w-0 rounded-3xl bg-white p-6 shadow-sm">
-      <h2 className="mb-4 text-lg font-semibold">{metric === "hours" ? "Heures" : "TSS"} par semaine</h2>
-      <ResponsiveContainer width="100%" height={280}><BarChart data={weeklyData}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis /><Tooltip labelFormatter={(value, payload) => `${value} · ${payload?.[0]?.payload.phase ?? ""} · ${payload?.[0]?.payload.type ?? ""}`} /><Legend /><Bar dataKey={`${metric}Plan`} name="Prévu semaine entière" fill="#a5b4fc" radius={[4, 4, 0, 0]} /><Bar dataKey={`${metric}Actual`} name="Réalisé à date" fill="#4f46e5" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer>
-    </section>)}</div>
-    <div className="grid gap-6 xl:grid-cols-2">{(["hours", "tss"] as const).map((metric) => <section key={metric} className="min-w-0 rounded-3xl bg-white p-6 shadow-sm">
-      <h2 className="mb-4 text-lg font-semibold">{metric === "hours" ? "Heures" : "TSS"} cumulés</h2>
-      <ResponsiveContainer width="100%" height={280}><LineChart data={cumulativeData}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis /><Tooltip /><Legend /><Line dataKey={`${metric}Plan`} name="Prévu" stroke="#a5b4fc" dot={false} strokeWidth={2} /><Line dataKey={`${metric}Actual`} name="Réalisé" stroke="#4f46e5" dot={false} strokeWidth={2} /></LineChart></ResponsiveContainer>
-    </section>)}</div>
+    <div className="grid gap-6 xl:grid-cols-2">{(["hours", "tss"] as const).map((metric) => <PlanChartCard key={metric} title={`${metric === "hours" ? "Heures" : "TSS"} par semaine`}>
+      <ResponsiveContainer width="100%" height="100%"><BarChart data={weeklyData}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis /><Tooltip labelFormatter={(value, payload) => `${value} · ${payload?.[0]?.payload.phase ?? ""} · ${payload?.[0]?.payload.type ?? ""}`} /><Legend /><Bar dataKey={`${metric}Plan`} name="Prévu semaine entière" fill="#a5b4fc" radius={[4, 4, 0, 0]} /><Bar dataKey={`${metric}Actual`} name="Réalisé à date" fill="#4f46e5" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer>
+    </PlanChartCard>)}</div>
+    <div className="grid gap-6 xl:grid-cols-2">{(["hours", "tss"] as const).map((metric) => <PlanChartCard key={metric} title={`${metric === "hours" ? "Heures" : "TSS"} cumulés`}>
+      <ResponsiveContainer width="100%" height="100%"><LineChart data={cumulativeData}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 11 }} /><YAxis /><Tooltip /><Legend /><Line dataKey={`${metric}Plan`} name="Prévu" stroke="#a5b4fc" dot={false} strokeWidth={2} /><Line dataKey={`${metric}Actual`} name="Réalisé" stroke="#4f46e5" dot={false} strokeWidth={2} /></LineChart></ResponsiveContainer>
+    </PlanChartCard>)}</div>
 
     <section className="rounded-3xl bg-white p-6 shadow-sm">
       <h2 className="text-xl font-semibold">Détail des semaines</h2>
